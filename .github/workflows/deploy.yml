@@ -21,7 +21,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             Server/package-lock.json
-            client/package-lock.json
+            package-lock.json
 
       - name: Install Backend Dependencies
         run: |
@@ -33,19 +33,17 @@ jobs:
       - name: Install Frontend Dependencies
         run: |
           echo "📦 Installing frontend dependencies..."
-          cd client
           npm ci --silent
           echo "✅ Frontend: $(npm list --depth=0 | wc -l) packages installed"
 
       - name: Test Frontend Build
         run: |
           echo "🏗️ Testing frontend build..."
-          cd client
           npm run build
           
           echo "🔍 Build output:"
-          ls -la dist/
-          du -sh dist/
+          ls -la client/dist/
+          du -sh client/dist/
           echo "✅ Build test successful!"
 
   deploy:
