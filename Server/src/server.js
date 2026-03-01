@@ -19,6 +19,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Enable trust proxy for Nginx compatibility
+app.set('trust proxy', 1);
+
 // Connect to MongoDB
 connectDB();
 
@@ -61,7 +64,7 @@ app.use(compression());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 500, // Increased from 100 to 500 for data-intensive dashboard
   standardHeaders: true,
   legacyHeaders: false,
   message: {
