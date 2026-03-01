@@ -62,15 +62,29 @@ Unregister-ScheduledTask -TaskName "MySLT-Log-Agent" -Confirm:$false
 ```
 
 ### 2. Install Fluent Bit
-1. Download the **Windows MSI** from [fluentbit.io](https://fluentbit.io/releases/).
-2. Run the installer (it defaults to `C:\Program Files (x86)\fluent-bit`).
+1.  **Check your Architecture**: Open PowerShell and run:
+    ```powershell
+    (Get-WmiObject -Class Win32_OperatingSystem).OSArchitecture
+    ```
+2.  **Download MSI**:
+    - [Download 64-bit MSI](https://fluentbit.io/releases/4.2/fluent-bit-4.2.2-win64.msi) (Recommended for most)
+    - [Download 32-bit MSI](https://fluentbit.io/releases/4.2/fluent-bit-4.2.2-win32.msi)
+3.  Run the installer (defaults to `C:\Program Files\fluent-bit` on 64-bit).
 
 ### 3. Deploy Configuration
-Run these commands from your **Dashboard Server** (137) to copy the files:
-```bash
-scp Scripts/fluent-bit-windows.conf Administrator@192.168.100.114:"C:\Program Files (x86)\fluent-bit\conf\fluent-bit.conf"
-scp Scripts/parsers.conf Administrator@192.168.100.114:"C:\Program Files (x86)\fluent-bit\conf\parsers.conf"
-```
+1.  Run these commands from your **Dashboard Server** (137) to copy the base files:
+    ```bash
+    scp Scripts/fluent-bit-windows.conf Administrator@192.168.100.114:"C:\Program Files\fluent-bit\conf\fluent-bit.conf"
+    scp Scripts/parsers.conf Administrator@192.168.100.114:"C:\Program Files\fluent-bit\conf\parsers.conf"
+    ```
+2.  **CRITICAL**: Update your `parsers.conf` on the Windows machine to use the **Space-Separated** regex:
+    ```ini
+    [PARSER]
+        Name        myslt_csv
+        Format      regex
+        Regex       ^(?<startTimestamp>\d+)\s+(?<accessMethod>\S+)\s+(?<customerEmail>\S+)\s+(?<status>\S+)\s+(?<apiNumber>\S+)\s+(?<endTimestamp>\d+)\s+(?<responseTime>\d+)$
+        Types       responseTime:integer
+    ```
 
 ### 4. Optional: Start Log Simulator
 If you want to generate test traffic, copy and run the simulator:

@@ -21,7 +21,6 @@ const apiLogSchema = new mongoose.Schema({
   status: {
     type: String,
     required: true,
-    enum: ['Information', 'Warning', 'Error', 'Critical'],
     index: true
   },
   apiNumber: {

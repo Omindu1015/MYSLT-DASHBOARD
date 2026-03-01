@@ -6,7 +6,7 @@ import ApiLog from '../models/ApiLog.js';
  */
 const parseLogLine = (line, remoteServerId) => {
   if (!line || !line.trim()) return null;
-  
+
   const parts = line.split(',');
   if (parts.length < 8) return null;
 
@@ -95,6 +95,9 @@ export const ingestLogStream = async (req, res) => {
     // Fluent Bit with Format json sends an array
     if (Array.isArray(req.body)) {
       count = req.body.length;
+      if (count > 0) {
+        console.log('[DEBUG] First item in batch:', JSON.stringify(req.body[0], null, 2));
+      }
       const parsedLogs = req.body.map(log => ({
         ...log,
         responseTime: parseInt(log.responseTime) || 0,

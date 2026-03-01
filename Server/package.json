@@ -9,7 +9,8 @@
     "dev": "nodemon src/server.js",
     "import-logs": "node src/utils/importLogs.js",
     "generate-live": "node src/utils/generateLiveData.js",
-    "seed-admin": "node seedAdmin.js"
+    "seed-admin": "node seedAdmin.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "keywords": [
     "monitoring",
@@ -24,13 +25,18 @@
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.0.3",
     "morgan": "^1.10.0",
-    "net-snmp": "^3.26.0"
+    "net-snmp": "^3.26.0",
+    "qs": "^6.15.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "jest": "^30.2.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^7.2.2"
   }
 }

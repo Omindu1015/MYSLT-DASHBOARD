@@ -9,27 +9,22 @@ import {
   addServerWithSNMP,
   deleteServer
 } from '../controllers/serverHealthController.js';
+import { verifyToken, isAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Get all servers health
-router.get('/', getAllServersHealth);
+// Protected routes (require valid token)
+router.get('/', verifyToken, getAllServersHealth);
+router.get('/:ip', verifyToken, getServerHealth);
+router.get('/snmp/:ip', verifyToken, getServerMetricsSNMP);
 
-// Get specific server health by IP
-router.get('/:ip', getServerHealth);
+// Admin-only routes
+router.post('/snmp/test', verifyToken, isAdmin, testSNMPConnectionEndpoint);
+router.post('/snmp/add', verifyToken, isAdmin, addServerWithSNMP);
+router.post('/initialize', verifyToken, isAdmin, initializeServerHealth);
+router.delete('/:ip', verifyToken, isAdmin, deleteServer);
 
-// Update server health (for monitoring agents)
+// Public route for agents to report health
 router.post('/update', updateServerHealth);
-
-// Initialize server health data
-router.post('/initialize', initializeServerHealth);
-
-// SNMP Routes
-router.get('/snmp/:ip', getServerMetricsSNMP);
-router.post('/snmp/test', testSNMPConnectionEndpoint);
-router.post('/snmp/add', addServerWithSNMP);
-
-// Delete server
-router.delete('/:ip', deleteServer);
 
 export default router;

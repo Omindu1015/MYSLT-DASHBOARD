@@ -11,8 +11,22 @@ import {
   getTopErrorApis,
   getApiSuccessRateHistory
 } from '../controllers/dashboardController.js';
+import {
+  getAllServersHealth,
+  getServerHealth,
+  getServerMetricsSNMP,
+  testSNMPConnectionEndpoint,
+  addServerWithSNMP,
+  initializeServerHealth,
+  deleteServer,
+  updateServerHealth
+} from '../controllers/serverHealthController.js';
+import { verifyToken, isAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Apply authentication to all dashboard routes
+router.use(verifyToken);
 
 // Dashboard statistics
 router.get('/stats', getDashboardStats);

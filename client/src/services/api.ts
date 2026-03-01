@@ -4,13 +4,24 @@ const API_BASE_URL = '/api';
 // Generic API request handler
 const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   try {
+    const token = localStorage.getItem('authToken');
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...options.headers,
       },
       ...options,
     });
+
+    // Handle session expiry or unauthorized access
+    if (response.status === 401) {
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('authToken');
+      window.location.href = '/login';
+      return;
+    }
 
     const data = await response.json();
 
