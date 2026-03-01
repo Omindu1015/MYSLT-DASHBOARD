@@ -85,10 +85,19 @@ jobs:
               echo "✅ Frontend backed up to $BACKUP_DIR"
             fi
             
-            # 3. Pull latest code
+            # 3. Pull latest code (Preserving local .env)
             echo "📥 Pulling latest code..."
+            
+            # Temporary backup of .env files if they exist
+            [ -f "Server/.env" ] && cp Server/.env /tmp/server_env_backup
+            [ -f "client/.env" ] && cp client/.env /tmp/client_env_backup
+            
             git fetch origin
             git reset --hard origin/main
+            
+            # Restore .env files after reset
+            [ -f "/tmp/server_env_backup" ] && mv /tmp/server_env_backup Server/.env && echo "✅ Restored Server/.env"
+            [ -f "/tmp/client_env_backup" ] && mv /tmp/client_env_backup client/.env && echo "✅ Restored client/.env"
             
             # 4. Install backend dependencies
             echo "📦 Installing backend dependencies..."
