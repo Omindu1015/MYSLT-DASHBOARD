@@ -26,13 +26,41 @@ export function AccessMethodChart() {
             name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(), // Capitalize first letter
             value: value as number
           }));
-          setData(chartData);
+          
+          // Group values under 1% as "Others"
+          const processedData = processAccessMethodData(chartData);
+          setData(processedData);
         }
       } catch (error) {
         console.error('Error fetching access method data:', error);
         // Clear data when backend connection fails
         setData([]);
       }
+    };
+    
+    const processAccessMethodData = (rawData: AccessMethod[]) => {
+      const threshold = 1; // Group values under 1%
+      const total = rawData.reduce((sum, item) => sum + item.value, 0);
+      let othersTotal = 0;
+      
+      const mainData = rawData.filter(item => {
+        const percentage = (item.value / total) * 100;
+        if (percentage < threshold) {
+          othersTotal += item.value;
+          return false; // Exclude from main data
+        }
+        return true; // Keep in main data
+      });
+      
+      // Add "Others" category if there are small values
+      if (othersTotal > 0) {
+        mainData.push({
+          name: 'Others',
+          value: othersTotal
+        });
+      }
+      
+      return mainData;
     };
 
     const setupInterval = (refresh: string) => {
@@ -117,7 +145,11 @@ export function AccessMethodChart() {
             }}
             labelStyle={{ color: '#94a3b8', fontSize: 12 }}
             itemStyle={{ color: '#fff', fontSize: 13 }}
-            formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+            formatter={(value: number, _name: string) => {
+              const total = data.reduce((sum, item) => sum + item.value, 0);
+              const percentage = ((value / total) * 100).toFixed(1);
+              return [`${value.toLocaleString()} (${percentage}%)`, _name];
+            }}
           />
           </PieChart>
         </ResponsiveContainer>
