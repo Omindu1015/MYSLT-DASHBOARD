@@ -11,6 +11,7 @@ interface ServerCardProps {
   networkTraffic?: number;
   os?: 'windows' | 'linux';
   onDelete?: () => void;
+  onRefresh?: () => void;
 }
 export function ServerCard({
   ip,
@@ -21,7 +22,8 @@ export function ServerCard({
   networkData,
   networkTraffic = 0,
   os = 'windows',
-  onDelete
+  onDelete,
+  onRefresh
 }: ServerCardProps) {
   const getColor = (value: number) => {
     if (value < 50) return 'text-green-400';
@@ -53,7 +55,11 @@ export function ServerCard({
             </div>
           </div>
         </div>
-        <button className="text-slate-400 hover:text-slate-600">
+        <button 
+          onClick={onRefresh}
+          className="text-slate-400 hover:text-green-400 transition-colors"
+          title="Refresh server data"
+        >
           <RefreshCwIcon size={20} />
         </button>
         {onDelete && (
