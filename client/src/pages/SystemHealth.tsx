@@ -139,7 +139,7 @@ export function SystemHealth() {
             <ServerCard 
               key={server.ip} 
               {...server}
-              onRefresh={fetchServers}
+              onRefresh={() => fetchServers()}
             />
           ))}
         </div>
