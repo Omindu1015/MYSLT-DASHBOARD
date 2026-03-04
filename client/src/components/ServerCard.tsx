@@ -1,4 +1,5 @@
  
+import { useState } from 'react';
 import { ServerIcon, RefreshCwIcon, Monitor, Trash2 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, CartesianGrid, XAxis, YAxis } from 'recharts';
 interface ServerCardProps {
@@ -25,6 +26,31 @@ export function ServerCard({
   onDelete,
   onRefresh
 }: ServerCardProps) {
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefresh || isRefreshing) return;
+    
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Refresh failed:', error);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
   const getColor = (value: number) => {
     if (value < 50) return 'text-green-400';
     if (value < 70) return 'text-orange-400';
@@ -53,11 +79,17 @@ export function ServerCard({
                 {os === 'windows' ? 'Windows' : 'Linux'}
               </span>
             </div>
+            <div className="text-xs text-slate-500 mt-1">
+              Updated: {formatTime(lastUpdated)}
+            </div>
           </div>
         </div>
         <button 
-          onClick={onRefresh}
-          className="text-slate-400 hover:text-green-400 transition-colors"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className={`text-slate-400 hover:text-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            isRefreshing ? 'animate-spin' : ''
+          }`}
           title="Refresh server data"
         >
           <RefreshCwIcon size={20} />
