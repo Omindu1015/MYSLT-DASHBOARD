@@ -49,8 +49,11 @@ export const getDashboardStats = async (req, res) => {
     if (serverIdentifier) {
       liveTrafficFilter.serverIdentifier = serverIdentifier;
     }
-    // Always use last 2 minutes for live traffic - with both lower and upper bounds
-    liveTrafficFilter.date = { $gte: twoMinutesAgo, $lte: now };
+    // Always use expanded window for live traffic to account for sync issues
+    liveTrafficFilter.date = {
+      $gte: new Date(now.getTime() - 600000), // Last 10 minutes
+      $lte: new Date(now.getTime() + 300000)  // 5 minutes future buffer
+    };
 
     // Debug logging
     console.log(`[Live Traffic] Checking for logs between ${twoMinutesAgo.toISOString()} and ${now.toISOString()}`);
@@ -104,10 +107,21 @@ export const getDashboardStats = async (req, res) => {
         { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
       ]),
 
-      // Response type distribution
+      // Response type distribution - Normalize "Information" for frontend compatibility
       ApiLog.aggregate([
         { $match: filter },
-        { $group: { _id: '$status', count: { $sum: 1 } } }
+        {
+          $group: {
+            _id: {
+              $cond: [
+                { $regexMatch: { input: "$status", regex: /^information$/i } },
+                "Information",
+                "$status"
+              ]
+            },
+            count: { $sum: 1 }
+          }
+        }
       ]),
 
       // Live traffic (requests in last minute) - query database directly

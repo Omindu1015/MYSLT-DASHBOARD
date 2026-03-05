@@ -158,7 +158,7 @@ const getWindowsCpuAverage = async (session) => {
     let cpuCount = 0;
     const cpuOidBase = '1.3.6.1.2.1.25.3.3.1.2';
 
-    session.subtree(cpuOidBase, (varbinds) => {
+    session.subtree(cpuOidBase, 20, (varbinds) => {
       for (let i = 0; i < varbinds.length; i++) {
         if (!snmp.isVarbindError(varbinds[i])) {
           const val = parseInt(varbinds[i].value || 0);
