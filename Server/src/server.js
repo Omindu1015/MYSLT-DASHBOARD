@@ -61,29 +61,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(compression());
 
-// Rate limiting
+// Rate limiting - Skip for log ingestion
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // Increased from 100 to 500 for data-intensive dashboard
+  max: 1000, // Increased for a data-intensive dashboard
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/api/logs'), // EXEMPT LOG INGESTION
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes'
   }
 });
 
-// Apply rate limiting to all requests
+// Apply rate limiting to all requests (except logs via skip)
 app.use(limiter);
-
-// Specific rate limit for ingestion endpoint (allow more since it receives logs from agents)
-const ingestionLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 60, // limit each IP to 60 requests per minute
-  standardHeaders: true,
-  legacyHeaders: false
-});
-app.use('/api/logs/ingest', ingestionLimiter);
 
 // Logging
 if (process.env.NODE_ENV === 'development') {
