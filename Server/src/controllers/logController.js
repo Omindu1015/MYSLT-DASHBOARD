@@ -95,12 +95,23 @@ export const ingestLogStream = async (req, res) => {
     // Fluent Bit with Format json sends an array
     if (Array.isArray(req.body)) {
       count = req.body.length;
-      const parsedLogs = req.body.map(log => ({
-        ...log,
-        responseTime: parseInt(log.responseTime) || 0,
-        date: log.startTimestamp ? new Date(parseInt(log.startTimestamp)) : new Date(),
-        serverIdentifier: log.serverIdentifier || serverIdentifier
-      }));
+      const parsedLogs = req.body.map(log => {
+        let timestamp = parseInt(log.startTimestamp);
+        let date = isNaN(timestamp) ? new Date() : new Date(timestamp);
+
+        // Fix: If date is in the far future (Year 3000+), subtract 1970 years
+        // This handles cases where the timestamp includes 1970 years of "pre-epoch" time.
+        if (date.getFullYear() > 3000) {
+          date.setFullYear(date.getFullYear() - 1970);
+        }
+
+        return {
+          ...log,
+          responseTime: parseInt(log.responseTime) || 0,
+          date: date,
+          serverIdentifier: log.serverIdentifier || serverIdentifier
+        };
+      });
       if (parsedLogs.length > 0) {
         await ApiLog.insertMany(parsedLogs, { ordered: false });
       }
