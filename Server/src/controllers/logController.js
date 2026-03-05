@@ -133,7 +133,10 @@ export const ingestLogStream = async (req, res) => {
         console.log(`[STREAM DEBUG] First item from ${serverIdentifier}:`, JSON.stringify(req.body[0], null, 2));
       }
       const parsedLogs = req.body.map(log => {
-        const date = new Date(parseTimestampToMs(log.startTimestamp));
+        // Fluent Bit sends a correct Unix timestamp in 'log.date' which we should use!
+        const date = log.date
+          ? new Date(parseFloat(log.date) * 1000)
+          : new Date(parseTimestampToMs(log.startTimestamp));
 
         return {
           ...log,
