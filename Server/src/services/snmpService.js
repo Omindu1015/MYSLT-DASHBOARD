@@ -153,48 +153,33 @@ const findActiveNetworkInterface = async (session) => {
  * Get average CPU usage from multiple cores (Windows)
  */
 const getWindowsCpuAverage = async (session) => {
-  let totalCpu = 0;
-  let cpuCount = 0;
+  return new Promise((resolve) => {
+    let totalCpu = 0;
+    let cpuCount = 0;
+    const cpuOidBase = '1.3.6.1.2.1.25.3.3.1.2';
 
-  try {
-    // Try up to 16 CPU cores
-    let consecutiveFailures = 0;
-    for (let i = 1; i <= 16; i++) {
-      try {
-        const cpuLoad = await getSingleOid(session, `1.3.6.1.2.1.25.3.3.1.2.${i}`);
-        const cpuValue = parseInt(cpuLoad || 0);
-
-        if (cpuValue >= 0) {
-          totalCpu += cpuValue;
+    session.subtree(cpuOidBase, (varbinds) => {
+      for (let i = 0; i < varbinds.length; i++) {
+        if (!snmp.isVarbindError(varbinds[i])) {
+          const val = parseInt(varbinds[i].value || 0);
+          totalCpu += val;
           cpuCount++;
-          consecutiveFailures = 0; // reset on success
-          console.log(`🖥️ CPU Core ${i}: ${cpuValue}%`);
         }
-      } catch (error) {
-        // CPU core query failed - skip this core and keep going
-        consecutiveFailures++;
-        console.warn(`⚠️ CPU Core ${i} query failed: ${error.message}`);
-        // Only stop if 3 consecutive cores fail (true end of CPU table)
-        if (consecutiveFailures >= 3) break;
       }
-    }
+    }, (error) => {
+      if (error) {
+        console.warn(`⚠️ SNMP Subtree Error for Windows CPU: ${error.message}`);
+      }
 
-    if (cpuCount > 0) {
-      const avgCpu = Math.round(totalCpu / cpuCount);
-      console.log(`🎯 Average CPU across ${cpuCount} cores: ${avgCpu}%`);
-      return avgCpu;
-    }
-  } catch (error) {
-    console.warn(`⚠️ Error getting Windows CPU average: ${error.message}`);
-  }
-
-  // Fallback to single CPU
-  try {
-    const singleCpu = await getSingleOid(session, OIDS.windows.cpuLoad);
-    return parseInt(singleCpu || 0);
-  } catch (error) {
-    return 0;
-  }
+      if (cpuCount > 0) {
+        const avg = Math.round(totalCpu / cpuCount);
+        console.log(`🎯 Average CPU across ${cpuCount} detected cores: ${avg}%`);
+        resolve(avg);
+      } else {
+        resolve(0);
+      }
+    });
+  });
 };
 
 /**

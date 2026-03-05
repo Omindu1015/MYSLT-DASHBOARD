@@ -11,33 +11,33 @@ export const getDashboardStats = async (req, res) => {
 
     // Build query filter
     const filter = {};
-    
+
     if (apiNumber && apiNumber !== 'ALL') {
       filter.apiNumber = apiNumber;
     }
-    
+
     // Support both email and phone number in customerEmail field (username)
     if (customerEmail) {
       filter.customerEmail = { $regex: customerEmail, $options: 'i' };
     }
-    
+
     if (dateFrom || dateTo) {
       filter.date = {};
       if (dateFrom) filter.date.$gte = new Date(dateFrom);
       if (dateTo) filter.date.$lte = new Date(dateTo);
     }
-    
+
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
 
     // Get all added servers from ServerHealth
     const addedServers = await ServerHealth.find().select('serverIp').lean();
-    
+
     // Get statistics
     const now = new Date();
     const twoMinutesAgo = new Date(now.getTime() - 120000); // Last 2 minutes
-    
+
     // Build live traffic filter (last 2 minutes only, ignoring user's date filters)
     const liveTrafficFilter = {};
     if (apiNumber && apiNumber !== 'ALL') {
@@ -51,22 +51,22 @@ export const getDashboardStats = async (req, res) => {
     }
     // Always use last 2 minutes for live traffic - with both lower and upper bounds
     liveTrafficFilter.date = { $gte: twoMinutesAgo, $lte: now };
-    
+
     // Debug logging
     console.log(`[Live Traffic] Checking for logs between ${twoMinutesAgo.toISOString()} and ${now.toISOString()}`);
-    
+
     // Calculate date ranges for customer comparison (today vs yesterday)
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
-    
+
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    
+
     const yesterdayEnd = new Date(todayStart);
-    
+
     // Build today's customer filter
     const todayCustomerFilter = { ...filter, date: { $gte: todayStart, $lte: now } };
-    
+
     // Build yesterday's customer filter
     const yesterdayCustomerFilter = {};
     if (apiNumber && apiNumber !== 'ALL') {
@@ -79,7 +79,7 @@ export const getDashboardStats = async (req, res) => {
       yesterdayCustomerFilter.serverIdentifier = serverIdentifier;
     }
     yesterdayCustomerFilter.date = { $gte: yesterdayStart, $lt: yesterdayEnd };
-    
+
     const [
       totalActiveCustomers,
       yesterdayActiveCustomers,
@@ -91,28 +91,28 @@ export const getDashboardStats = async (req, res) => {
     ] = await Promise.all([
       // Unique active customers today
       ApiLog.distinct('customerEmail', todayCustomerFilter).then(emails => emails.length),
-      
+
       // Unique active customers yesterday
       ApiLog.distinct('customerEmail', yesterdayCustomerFilter).then(emails => emails.length),
-      
+
       // Total traffic count
       ApiLog.countDocuments(filter),
-      
+
       // Access method distribution
       ApiLog.aggregate([
         { $match: filter },
         { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
       ]),
-      
+
       // Response type distribution
       ApiLog.aggregate([
         { $match: filter },
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
-      
+
       // Live traffic (requests in last minute) - query database directly
       ApiLog.countDocuments(liveTrafficFilter),
-      
+
       // Dynamic server request counts (group by serverIdentifier)
       ApiLog.aggregate([
         { $match: filter },
@@ -122,14 +122,14 @@ export const getDashboardStats = async (req, res) => {
 
     // Debug logging - check actual live traffic count and sample logs
     console.log(`[Live Traffic] Found ${liveTraffic} requests in last 2 minutes`);
-    
+
     // Get a sample of recent logs to verify dates
     const sampleRecentLogs = await ApiLog.find({})
       .sort({ date: -1 })
       .limit(5)
       .select('date apiNumber customerEmail')
       .lean();
-    
+
     if (sampleRecentLogs.length > 0) {
       console.log(`[Live Traffic] Sample of 5 most recent logs:`);
       sampleRecentLogs.forEach((log, idx) => {
@@ -143,7 +143,7 @@ export const getDashboardStats = async (req, res) => {
     addedServers.forEach(server => {
       const serverIp = server.serverIp;
       // Find matching serverIdentifier in logs (might be last octet or full IP)
-      const matchingStat = serverRequestStats.find(stat => 
+      const matchingStat = serverRequestStats.find(stat =>
         serverIp.endsWith(`.${stat._id}`) || stat._id === serverIp
       );
       serverRequests[serverIp] = matchingStat ? matchingStat.count : 0;
@@ -152,7 +152,7 @@ export const getDashboardStats = async (req, res) => {
     // Calculate customer change percentage
     let customerChangePercent = 0;
     let customerChangeText = 'No change from yesterday';
-    
+
     if (yesterdayActiveCustomers > 0) {
       customerChangePercent = ((totalActiveCustomers - yesterdayActiveCustomers) / yesterdayActiveCustomers) * 100;
       const sign = customerChangePercent >= 0 ? '+' : '';
@@ -197,7 +197,7 @@ export const getApiResponseTimes = async (req, res) => {
     const { apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
 
     const filter = {};
-    
+
     if (apiNumber && apiNumber !== 'ALL') {
       filter.apiNumber = apiNumber;
     }
@@ -205,7 +205,7 @@ export const getApiResponseTimes = async (req, res) => {
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
-    
+
     if (dateFrom || dateTo) {
       filter.date = {};
       if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -258,11 +258,11 @@ export const getApiSuccessRates = async (req, res) => {
     const { dateFrom, dateTo, serverIdentifier } = req.query;
 
     const filter = {};
-    
+
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
-    
+
     if (dateFrom || dateTo) {
       filter.date = {};
       if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -276,7 +276,13 @@ export const getApiSuccessRates = async (req, res) => {
           _id: '$apiNumber',
           total: { $sum: 1 },
           successful: {
-            $sum: { $cond: [{ $eq: ['$status', 'Information'] }, 1, 0] }
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: "$status", regex: /^information$/i } },
+                1,
+                0
+              ]
+            }
           }
         }
       },
@@ -321,10 +327,12 @@ export const getLiveTraffic = async (req, res) => {
   try {
     const { minutes = 30, serverIdentifier } = req.query;
     const now = new Date();
-    const timeAgo = new Date(now.getTime() - minutes * 60000);
+    // Increase window and add future buffer for clock drift
+    const timeAgo = new Date(now.getTime() - (parseInt(minutes) + 10) * 60000);
+    const futureBuffer = new Date(now.getTime() + 5 * 60000); // 5 min future buffer
 
     const filter = {
-      date: { $gte: timeAgo, $lte: now }
+      date: { $gte: timeAgo, $lte: futureBuffer }
     };
 
     if (serverIdentifier) {
@@ -333,7 +341,7 @@ export const getLiveTraffic = async (req, res) => {
 
     // Group by 2-minute intervals for smoother visualization
     const intervalMinutes = 2;
-    
+
     const trafficData = await ApiLog.aggregate([
       {
         $match: filter
@@ -365,13 +373,13 @@ export const getLiveTraffic = async (req, res) => {
     const intervalMs = intervalMinutes * 60 * 1000;
     const startTime = Math.floor(timeAgo.getTime() / intervalMs) * intervalMs;
     const endTime = Math.floor(now.getTime() / intervalMs) * intervalMs;
-    
+
     const dataMap = new Map();
     trafficData.forEach(item => {
       const roundedTime = Math.floor(new Date(item.timestamp).getTime() / intervalMs) * intervalMs;
       dataMap.set(roundedTime, item.count);
     });
-    
+
     for (let time = startTime; time <= endTime; time += intervalMs) {
       const date = new Date(time);
       result.push({
@@ -402,7 +410,7 @@ export const getApiDetails = async (req, res) => {
     const { page = 1, limit = 10, apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
 
     const filter = {};
-    
+
     if (apiNumber && apiNumber !== 'ALL') {
       filter.apiNumber = apiNumber;
     }
@@ -410,7 +418,7 @@ export const getApiDetails = async (req, res) => {
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
-    
+
     if (dateFrom || dateTo) {
       filter.date = {};
       if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -423,7 +431,13 @@ export const getApiDetails = async (req, res) => {
         $group: {
           _id: '$apiNumber',
           successRate: {
-            $avg: { $cond: [{ $eq: ['$status', 'Information'] }, 100, 0] }
+            $avg: {
+              $cond: [
+                { $regexMatch: { input: "$status", regex: /^information$/i } },
+                100,
+                0
+              ]
+            }
           },
           avgResponseTime: { $avg: '$responseTime' },
           requestCount: { $sum: 1 }
@@ -495,7 +509,7 @@ export const getApiList = async (req, res) => {
 export const getCustomerLogs = async (req, res) => {
   try {
     const { username } = req.params;
-    
+
     if (!username) {
       return res.status(400).json({
         success: false,
@@ -534,11 +548,11 @@ export const getTopSuccessApis = async (req, res) => {
     const { dateFrom, dateTo, serverIdentifier } = req.query;
 
     const filter = {};
-    
+
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
-    
+
     if (dateFrom || dateTo) {
       filter.date = {};
       if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -552,7 +566,13 @@ export const getTopSuccessApis = async (req, res) => {
           _id: '$apiNumber',
           total: { $sum: 1 },
           successful: {
-            $sum: { $cond: [{ $eq: ['$status', 'Information'] }, 1, 0] }
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: "$status", regex: /^information$/i } },
+                1,
+                0
+              ]
+            }
           },
           avgResponseTime: { $avg: '$responseTime' }
         }
@@ -602,11 +622,11 @@ export const getTopErrorApis = async (req, res) => {
     const { dateFrom, dateTo, serverIdentifier } = req.query;
 
     const filter = {};
-    
+
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
-    
+
     if (dateFrom || dateTo) {
       filter.date = {};
       if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -620,12 +640,17 @@ export const getTopErrorApis = async (req, res) => {
           _id: '$apiNumber',
           total: { $sum: 1 },
           errors: {
-            $sum: { 
+            $sum: {
               $cond: [
-                { $in: ['$status', ['Error', 'Critical', 'Warning']] }, 
-                1, 
+                {
+                  $regexMatch: {
+                    input: "$status",
+                    regex: /^(error|critical|warning)$/i
+                  }
+                },
+                1,
                 0
-              ] 
+              ]
             }
           },
           avgResponseTime: { $avg: '$responseTime' }
@@ -680,11 +705,11 @@ export const getApiSuccessRateHistory = async (req, res) => {
 
     // Build query filter
     const filter = {};
-    
+
     if (apiNumber && apiNumber !== 'ALL') {
       filter.apiNumber = apiNumber;
     }
-    
+
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
     }
@@ -694,7 +719,7 @@ export const getApiSuccessRateHistory = async (req, res) => {
     const now = new Date();
     const startTime = dateFrom ? new Date(dateFrom) : new Date(now.getTime() - hoursNum * 60 * 60 * 1000);
     const endTime = dateTo ? new Date(dateTo) : now;
-    
+
     filter.date = { $gte: startTime, $lte: endTime };
 
     // Group by hour and calculate success rate
@@ -711,7 +736,11 @@ export const getApiSuccessRateHistory = async (req, res) => {
           totalRequests: { $sum: 1 },
           successRequests: {
             $sum: {
-              $cond: [{ $eq: ['$status', 'Information'] }, 1, 0]
+              $cond: [
+                { $regexMatch: { input: "$status", regex: /^information$/i } },
+                1,
+                0
+              ]
             }
           },
           timestamp: { $first: '$date' }
