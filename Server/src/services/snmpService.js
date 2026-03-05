@@ -160,8 +160,10 @@ const getWindowsCpuAverage = async (session) => {
 
     session.subtree(cpuOidBase, 20, (varbinds) => {
       for (let i = 0; i < varbinds.length; i++) {
-        if (!snmp.isVarbindError(varbinds[i])) {
+        const oid = varbinds[i].oid;
+        if (!snmp.isVarbindError(varbinds[i]) && oid.startsWith(cpuOidBase)) {
           const val = parseInt(varbinds[i].value || 0);
+          console.log(`🖥️  Found CPU OID: ${oid} = ${val}%`);
           totalCpu += val;
           cpuCount++;
         }
@@ -173,7 +175,7 @@ const getWindowsCpuAverage = async (session) => {
 
       if (cpuCount > 0) {
         const avg = Math.round(totalCpu / cpuCount);
-        console.log(`🎯 Average CPU across ${cpuCount} detected cores: ${avg}%`);
+        console.log(`🎯 Calculated Average CPU (${totalCpu}/${cpuCount}): ${avg}%`);
         resolve(avg);
       } else {
         resolve(0);

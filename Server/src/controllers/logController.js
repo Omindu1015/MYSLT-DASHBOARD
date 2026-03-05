@@ -13,10 +13,21 @@ const parseTimestampToMs = (raw) => {
   const n = parseInt(str);
   if (isNaN(n)) return Date.now();
   const len = str.replace('-', '').length; // ignore sign
-  if (len >= 18) return Math.floor(n / 1_000_000); // nanoseconds
-  if (len >= 15) return Math.floor(n / 1_000);     // microseconds
-  if (len >= 12) return n;                          // milliseconds
-  return n * 1_000;                                 // seconds
+
+  let ms;
+  if (len >= 18) ms = Math.floor(n / 1_000_000); // nanoseconds
+  else if (len >= 15) ms = Math.floor(n / 1_000);     // microseconds
+  else if (len >= 12) ms = n;                          // milliseconds
+  else ms = n * 1_000;                                 // seconds
+
+  // Fix: If date is in the far future (Year 3000+), subtract 1970 years
+  // This handles Windows timestamps that start from year 0 instead of 1970
+  let date = new Date(ms);
+  if (date.getFullYear() > 3000) {
+    date.setFullYear(date.getFullYear() - 1970);
+    return date.getTime();
+  }
+  return ms;
 };
 
 /**
@@ -70,6 +81,10 @@ export const ingestLogs = async (req, res) => {
       });
     }
 
+    if (logs.length > 0) {
+      console.log(`[DEBUG] First log line from ${serverIdentifier}:`, logs[0]);
+    }
+
     const parsedLogs = logs
       .map(line => parseLogLine(line, serverIdentifier))
       .filter(log => log !== null);
@@ -114,6 +129,9 @@ export const ingestLogStream = async (req, res) => {
     // Fluent Bit with Format json sends an array
     if (Array.isArray(req.body)) {
       count = req.body.length;
+      if (count > 0) {
+        console.log(`[STREAM DEBUG] First item from ${serverIdentifier}:`, JSON.stringify(req.body[0], null, 2));
+      }
       const parsedLogs = req.body.map(log => {
         const date = new Date(parseTimestampToMs(log.startTimestamp));
 
