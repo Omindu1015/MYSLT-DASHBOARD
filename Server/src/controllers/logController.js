@@ -1,6 +1,25 @@
 import ApiLog from '../models/ApiLog.js';
 
 /**
+ * Convert a timestamp string to milliseconds.
+ * Handles:
+ *   - nanoseconds  (19 digits, e.g. 1741150000000000000) → divide by 1,000,000
+ *   - microseconds (16 digits, e.g. 1741150000000000)    → divide by 1,000
+ *   - milliseconds (13 digits, e.g. 1741150000000)       → use as-is
+ *   - seconds      (10 digits, e.g. 1741150000)          → multiply by 1,000
+ */
+const parseTimestampToMs = (raw) => {
+  const str = String(raw).trim();
+  const n = parseInt(str);
+  if (isNaN(n)) return Date.now();
+  const len = str.replace('-', '').length; // ignore sign
+  if (len >= 18) return Math.floor(n / 1_000_000); // nanoseconds
+  if (len >= 15) return Math.floor(n / 1_000);     // microseconds
+  if (len >= 12) return n;                          // milliseconds
+  return n * 1_000;                                 // seconds
+};
+
+/**
  * Parse a single log line (Copied from importLogs.js logic)
  * Format: startTimestamp,accessMethod,customerEmail,status,apiNumber,empty,endTimestamp,responseTime,serverIdentifier
  */
@@ -24,7 +43,7 @@ const parseLogLine = (line, remoteServerId) => {
     endTimestamp,
     responseTime: parseInt(responseTime) || 0,
     serverIdentifier: finalServerId,
-    date: new Date(parseInt(startTimestamp))
+    date: new Date(parseTimestampToMs(startTimestamp))
   };
 };
 
@@ -96,14 +115,7 @@ export const ingestLogStream = async (req, res) => {
     if (Array.isArray(req.body)) {
       count = req.body.length;
       const parsedLogs = req.body.map(log => {
-        let timestamp = parseInt(log.startTimestamp);
-        let date = isNaN(timestamp) ? new Date() : new Date(timestamp);
-
-        // Fix: If date is in the far future (Year 3000+), subtract 1970 years
-        // This handles cases where the timestamp includes 1970 years of "pre-epoch" time.
-        if (date.getFullYear() > 3000) {
-          date.setFullYear(date.getFullYear() - 1970);
-        }
+        const date = new Date(parseTimestampToMs(log.startTimestamp));
 
         return {
           ...log,
