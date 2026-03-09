@@ -122,10 +122,12 @@ export function ApiDetailsTable() {
         const combinedFilters = { ...filters };
         
         if (filterMode === 'success') {
-          // Fetch top 20 APIs with highest success rate
+          // Fetch all APIs with highest success rate
+          combinedFilters.limit = 1000; // High limit to get all APIs
           response = await dashboardApi.getTopSuccessApis(combinedFilters);
         } else if (filterMode === 'error') {
-          // Fetch top 20 APIs with highest error rate
+          // Fetch all APIs with highest error rate
+          combinedFilters.limit = 1000; // High limit to get all APIs
           response = await dashboardApi.getTopErrorApis(combinedFilters);
         } else {
           // Default: fetch all APIs (no limit)

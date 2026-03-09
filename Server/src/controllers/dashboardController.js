@@ -559,7 +559,8 @@ export const getCustomerLogs = async (req, res) => {
  */
 export const getTopSuccessApis = async (req, res) => {
   try {
-    const { dateFrom, dateTo, serverIdentifier } = req.query;
+    const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
+    const limitValue = limit ? parseInt(limit, 10) : 20;
 
     const filter = {};
 
@@ -602,7 +603,7 @@ export const getTopSuccessApis = async (req, res) => {
         }
       },
       { $sort: { successRate: -1 } },
-      { $limit: 20 }
+      { $limit: limitValue }
     ]);
 
     const formattedData = apiStats.map(stat => ({
@@ -633,7 +634,8 @@ export const getTopSuccessApis = async (req, res) => {
  */
 export const getTopErrorApis = async (req, res) => {
   try {
-    const { dateFrom, dateTo, serverIdentifier } = req.query;
+    const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
+    const limitValue = limit ? parseInt(limit, 10) : 20;
 
     const filter = {};
 
@@ -684,7 +686,7 @@ export const getTopErrorApis = async (req, res) => {
         }
       },
       { $sort: { errorRate: -1 } },
-      { $limit: 20 }
+      { $limit: limitValue }
     ]);
 
     const formattedData = apiStats.map(stat => ({
