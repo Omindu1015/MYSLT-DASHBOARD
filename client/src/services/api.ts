@@ -120,6 +120,7 @@ export const dashboardApi = {
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    limit?: number;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
@@ -135,6 +136,7 @@ export const dashboardApi = {
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    limit?: number;
   }) => {
     const params = new URLSearchParams();
     if (filters) {

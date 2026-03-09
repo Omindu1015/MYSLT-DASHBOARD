@@ -123,7 +123,7 @@ export function SuccessRateChart() {
 
       <div className="h-56 sm:h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 10 }} barCategoryGap="20%" barGap={6}>
+          <BarChart data={data} margin={{ top: 30, right: 10, left: 0, bottom: 10 }} barCategoryGap="20%" barGap={6}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="api" stroke="#94a3b8" />
           <YAxis stroke="#94a3b8" domain={[0, 100]} ticks={[0, 40, 60, 80, 100]} tickFormatter={(v) => `${v}%`} />
