@@ -20,6 +20,7 @@ export function Login() {
       // Store auth state so Header.tsx can read it
       const account = result.account;
       localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('authToken', result.idToken);
       localStorage.setItem('userName', account?.name || account?.username || 'Admin');
       navigate('/dashboard');
     } catch (err: any) {
