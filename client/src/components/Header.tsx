@@ -3,8 +3,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../Logo/SLTMobitel_Logo.svg.png';
 import { User, BarChart3, Server, LogOut, LogIn, Settings } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+import { useMsal } from '@azure/msal-react';
 
 export function Header() {
+  const { instance } = useMsal();
   const location = useLocation();
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -41,13 +43,18 @@ export function Header() {
     setIsUserMenuOpen(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setIsAuthenticated(false);
     setUserName('Guest');
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('userName');
     setIsUserMenuOpen(false);
-    navigate('/');
+    try {
+      await instance.logoutPopup();
+    } catch {
+      // ignore popup close
+    }
+    navigate('/login');
   };
 
   const handleAdminPanel = () => {
