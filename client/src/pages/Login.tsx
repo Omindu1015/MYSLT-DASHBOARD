@@ -5,10 +5,19 @@ import logo from '../Logo/SLTMobitel_Logo.svg.png';
 import { AlertCircle } from 'lucide-react';
 
 export function Login() {
-  const { instance } = useMsal();
+  const { instance, inProgress } = useMsal();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // If MSAL is already handling a redirect or popup, don't show the login button
+  if (inProgress !== 'none') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   const handleAzureLogin = async () => {
     setError('');

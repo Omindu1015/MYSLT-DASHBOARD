@@ -8,6 +8,11 @@ const msalConfig = {
     clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
     authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}`,
     redirectUri: import.meta.env.VITE_AZURE_REDIRECT_URI || window.location.origin,
+    navigateToLoginRequestUrl: false,
+  },
+  cache: {
+    cacheLocation: 'localStorage',
+    storeAuthStateInCookie: true,
   },
 };
 
