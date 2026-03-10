@@ -14,9 +14,13 @@ export function Login() {
     setError('');
     setIsLoading(true);
     try {
-      await instance.loginPopup({
+      const result = await instance.loginPopup({
         scopes: ['User.Read'],
       });
+      // Store auth state so Header.tsx can read it
+      const account = result.account;
+      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('userName', account?.name || account?.username || 'Admin');
       navigate('/dashboard');
     } catch (err: any) {
       // Ignore user-cancelled popups (MSAL uses different codes depending on version/flow)
