@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMsal } from '@azure/msal-react';
 import { useNavigate } from 'react-router-dom';
 import logo from '../Logo/SLTMobitel_Logo.svg.png';
@@ -10,11 +10,27 @@ export function Login() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // If MSAL is already handling a redirect or popup, don't show the login button
+  // If MSAL is busy for too long (e.g. stuck popup), reset after 8 seconds
+  useEffect(() => {
+    if (inProgress !== 'none') {
+      const timeout = setTimeout(() => {
+        // Clear any stale MSAL interaction lock in sessionStorage
+        Object.keys(sessionStorage)
+          .filter((k) => k.startsWith('msal.'))
+          .forEach((k) => sessionStorage.removeItem(k));
+        // Force page reload to reset MSAL state
+        window.location.reload();
+      }, 8000);
+      return () => clearTimeout(timeout);
+    }
+  }, [inProgress]);
+
+  // If MSAL is already handling a redirect or popup, show spinner
   if (inProgress !== 'none') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center flex-col gap-4">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <p className="text-slate-400 text-sm">Authenticating... (will reset if stuck)</p>
       </div>
     );
   }
@@ -33,7 +49,7 @@ export function Login() {
       localStorage.setItem('userName', account?.name || account?.username || 'Admin');
       navigate('/dashboard');
     } catch (err: any) {
-      // Ignore user-cancelled popups (MSAL uses different codes depending on version/flow)
+      // Ignore user-cancelled popups
       const code: string = err?.errorCode ?? err?.error ?? '';
       const message: string = err?.message ?? '';
       const isCancelled =
@@ -41,9 +57,11 @@ export function Login() {
         code === 'user_cancel' ||
         code === 'access_denied' ||
         message.toLowerCase().includes('cancel') ||
-        message.toLowerCase().includes('user closed');
+        message.toLowerCase().includes('user closed') ||
+        message.toLowerCase().includes('popup_window_error');
       if (!isCancelled) {
         setError('Azure login failed. Please try again.');
+        console.error('MSAL login error:', err);
       }
     } finally {
       setIsLoading(false);

@@ -14,16 +14,19 @@ export function Header() {
   const [userName, setUserName] = useState('Guest');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Check authentication status on mount
+  // Re-check authentication status on every route change
   useEffect(() => {
     const authStatus = localStorage.getItem('isAuthenticated');
     const storedUserName = localStorage.getItem('userName');
-    
+
     if (authStatus === 'true') {
       setIsAuthenticated(true);
       setUserName(storedUserName || 'Admin');
+    } else {
+      setIsAuthenticated(false);
+      setUserName('Guest');
     }
-  }, []);
+  }, [location.pathname]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -94,11 +97,10 @@ export function Header() {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                location.pathname === item.path
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${location.pathname === item.path
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-              }`}
+                }`}
             >
               <item.icon size={18} />
               <span className="text-sm font-medium">{item.label}</span>
@@ -110,7 +112,7 @@ export function Header() {
       <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
         {/* User Dropdown Menu */}
         <div className="relative" ref={dropdownRef}>
-          <button 
+          <button
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors"
           >
@@ -125,7 +127,7 @@ export function Header() {
                 <p className="text-sm text-slate-400">Signed in as</p>
                 <p className="text-sm font-semibold text-white mt-1">{userName}</p>
               </div>
-              
+
               <div className="py-2">
                 {isAuthenticated ? (
                   <>
