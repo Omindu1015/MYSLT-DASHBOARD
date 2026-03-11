@@ -33,15 +33,19 @@ export function MSALApp() {
         return msalInstance.handleRedirectPromise();
       })
       .then((result) => {
-        if (result && result.account) {
+        if (result) {
           // Azure returned an auth code via redirect — save auth to localStorage
-          const account = result.account;
+          const account = result.account || msalInstance.getAllAccounts()[0] || null;
           localStorage.setItem('isAuthenticated', 'true');
           localStorage.setItem('authToken', result.idToken);
-          localStorage.setItem('userName', account.name || account.username || 'Admin');
-          // Clean the #code=... hash from the URL without reloading
-          window.history.replaceState(null, '', window.location.pathname);
+          localStorage.setItem('userName', account?.name || account?.username || 'Admin');
+          localStorage.setItem('userRole', 'admin');
+          // Clean the #code=... hash/query from the URL without reloading
+          console.log('Authentication successful, redirecting to dashboard...');
+          // window.history.replaceState(null, '', window.location.pathname);
+          
           setRedirectTo('/dashboard');
+          window.location.href = '/dashboard';
         }
         setIsInitialized(true);
       })

@@ -53,7 +53,7 @@ export function Header() {
     localStorage.removeItem('userName');
     setIsUserMenuOpen(false);
     try {
-      await instance.logoutPopup();
+      // await instance.logoutPopup();
     } catch {
       // ignore popup close
     }

@@ -94,13 +94,12 @@ export function Login() {
     setError('');
     setIsAzureLoading(true);
     try {
-      const result = await instance.loginPopup({ scopes: ['User.Read'] });
-      const account = result.account;
-      localStorage.setItem('isAuthenticated', 'true');
-      localStorage.setItem('authToken', result.idToken);
-      localStorage.setItem('userName', account?.name || account?.username || 'Admin');
-      navigate('/dashboard');
+      // Use redirect flow so Azure returns to the main window, not a popup.
+      // MSALApp.tsx's handleRedirectPromise() will process the result on return.
+      await instance.loginRedirect({ scopes: ['User.Read'] });
+      // Page navigates away on success — no code runs after this point
     } catch (err: any) {
+      console.error('MSAL login error (caught in Login component):', err);
       const code: string = err?.errorCode ?? err?.error ?? '';
       const message: string = err?.message ?? '';
       const isCancelled =
@@ -111,7 +110,6 @@ export function Login() {
         setError('Azure login failed. Please try again.');
         console.error('MSAL login error:', err);
       }
-    } finally {
       setIsAzureLoading(false);
     }
   };
