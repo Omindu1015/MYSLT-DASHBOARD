@@ -1,197 +1,274 @@
 import ApiLog from '../models/ApiLog.js';
 import ServerHealth from '../models/ServerHealth.js';
+import HourlyStats from '../models/HourlyStats.js';
 import { apiMapping } from '../config/apiMapping.js';
+import { withCache, getCacheKey } from '../utils/cache.js';
+import hotStats from '../utils/hotStats.js';
 
 /**
  * Get dashboard statistics and KPIs
  */
 export const getDashboardStats = async (req, res) => {
+  const cacheKey = getCacheKey('stats', req.query);
+
   try {
-    const { apiNumber, customerEmail, dateFrom, dateTo, serverIdentifier } = req.query;
+    const data = await withCache(cacheKey, async () => {
+      const { apiNumber, customerEmail, dateFrom, dateTo, serverIdentifier } = req.query;
+      const now = new Date();
 
-    // Build query filter
-    const filter = {};
+      // Build query filter
+      const filter = {};
 
-    if (apiNumber && apiNumber !== 'ALL') {
-      filter.apiNumber = apiNumber;
-    }
+      if (apiNumber && apiNumber !== 'ALL') {
+        filter.apiNumber = apiNumber;
+      }
 
-    // Support both email and phone number in customerEmail field (username)
-    if (customerEmail) {
-      filter.customerEmail = { $regex: customerEmail, $options: 'i' };
-    }
+      // Support both email and phone number in customerEmail field (username)
+      if (customerEmail) {
+        filter.customerEmail = { $regex: customerEmail, $options: 'i' };
+      }
 
-    if (dateFrom || dateTo) {
-      filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom);
-      if (dateTo) filter.date.$lte = new Date(dateTo);
-    }
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+      }
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      if (serverIdentifier) {
+        filter.serverIdentifier = serverIdentifier;
+      }
 
-    // Get all added servers from ServerHealth
-    const addedServers = await ServerHealth.find().select('serverIp').lean();
+      // Get all added servers from ServerHealth
+      const addedServers = await ServerHealth.find().select('serverIp').lean();
 
-    // Get statistics
-    const now = new Date();
-    const twoMinutesAgo = new Date(now.getTime() - 120000); // Last 2 minutes
+      // Get statistics
+      const twoMinutesAgo = new Date(new Date().getTime() - 120000); // Last 2 minutes
 
-    // Build live traffic filter (last 2 minutes only, ignoring user's date filters)
-    const liveTrafficFilter = {};
-    if (apiNumber && apiNumber !== 'ALL') {
-      liveTrafficFilter.apiNumber = apiNumber;
-    }
-    if (customerEmail) {
-      liveTrafficFilter.customerEmail = { $regex: customerEmail, $options: 'i' };
-    }
-    if (serverIdentifier) {
-      liveTrafficFilter.serverIdentifier = serverIdentifier;
-    }
-    // Always use expanded window for live traffic to account for sync issues
-    liveTrafficFilter.date = {
-      $gte: new Date(now.getTime() - 600000), // Last 10 minutes
-      $lte: new Date(now.getTime() + 300000)  // 5 minutes future buffer
-    };
+      // Build live traffic filter (last 2 minutes only, ignoring user's date filters)
+      const liveTrafficFilter = {};
+      if (apiNumber && apiNumber !== 'ALL') {
+        liveTrafficFilter.apiNumber = apiNumber;
+      }
+      if (customerEmail) {
+        liveTrafficFilter.customerEmail = { $regex: customerEmail, $options: 'i' };
+      }
+      if (serverIdentifier) {
+        liveTrafficFilter.serverIdentifier = serverIdentifier;
+      }
+      // Always use expanded window for live traffic to account for sync issues
+      liveTrafficFilter.date = {
+        $gte: new Date(now.getTime() - 600000), // Last 10 minutes
+        $lte: new Date(now.getTime() + 300000)  // 5 minutes future buffer
+      };
 
-    // Debug logging
-    console.log(`[Live Traffic] Checking for logs between ${twoMinutesAgo.toISOString()} and ${now.toISOString()}`);
+      // Debug logging
+      console.log(`[Live Traffic] Checking for logs between ${twoMinutesAgo.toISOString()} and ${now.toISOString()}`);
 
-    // Calculate date ranges for customer comparison (today vs yesterday)
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+      // Calculate date ranges for customer comparison (today vs yesterday)
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
 
-    const yesterdayStart = new Date(todayStart);
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-    const yesterdayEnd = new Date(todayStart);
+      const yesterdayEnd = new Date(todayStart);
 
-    // Build today's customer filter
-    const todayCustomerFilter = { ...filter, date: { $gte: todayStart, $lte: now } };
+      // Build today's customer filter
+      const todayCustomerFilter = { ...filter, date: { $gte: todayStart, $lte: now } };
 
-    // Build yesterday's customer filter
-    const yesterdayCustomerFilter = {};
-    if (apiNumber && apiNumber !== 'ALL') {
-      yesterdayCustomerFilter.apiNumber = apiNumber;
-    }
-    if (customerEmail) {
-      yesterdayCustomerFilter.customerEmail = { $regex: customerEmail, $options: 'i' };
-    }
-    if (serverIdentifier) {
-      yesterdayCustomerFilter.serverIdentifier = serverIdentifier;
-    }
-    yesterdayCustomerFilter.date = { $gte: yesterdayStart, $lt: yesterdayEnd };
+      // 3. Historical Accuracy (Comparison)
+      // For comparison, always use the previous 24h period relative to the end of the query or now
+      const comparisonEnd = dateFrom ? new Date(dateFrom) : todayStart;
+      const comparisonStart = new Date(comparisonEnd.getTime() - 24 * 60 * 60 * 1000);
 
-    const [
-      totalActiveCustomers,
-      yesterdayActiveCustomers,
-      totalTrafficCount,
-      accessMethodStats,
-      responseTypeStats,
-      liveTraffic,
-      serverRequestStats
-    ] = await Promise.all([
-      // Unique active customers today
-      ApiLog.distinct('customerEmail', todayCustomerFilter).then(emails => emails.length),
+      const yesterdayCustomerFilter = {
+        date: { $gte: comparisonStart, $lt: comparisonEnd }
+      };
+      if (apiNumber && apiNumber !== 'ALL') yesterdayCustomerFilter.apiNumber = apiNumber;
+      if (serverIdentifier) yesterdayCustomerFilter.serverIdentifier = serverIdentifier;
 
-      // Unique active customers yesterday
-      ApiLog.distinct('customerEmail', yesterdayCustomerFilter).then(emails => emails.length),
+      const yesterdayCustomerCount = await HourlyStats.aggregate([
+        { $match: yesterdayCustomerFilter },
+        { $group: { _id: null, total: { $sum: '$uniqueCustomersCount' } } }
+      ]).then(res => (res[0]?.total || 0));
 
-      // Total traffic count
-      ApiLog.countDocuments(filter),
+      // --- HYBRID QUERY ENGINE ---
+      const currentHourStart = new Date(now);
+      currentHourStart.setMinutes(0, 0, 0, 0);
 
-      // Access method distribution
-      ApiLog.aggregate([
-        { $match: filter },
-        { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
-      ]),
+      const isCurrentHourIncluded = (!dateTo || new Date(dateTo) >= currentHourStart) && (!dateFrom || new Date(dateFrom) <= now);
+      const isFilteredByCustomer = !!customerEmail;
 
-      // Response type distribution - Normalize "Information" for frontend compatibility
-      ApiLog.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: {
-              $cond: [
-                { $regexMatch: { input: "$status", regex: /^information$/i } },
-                "Information",
-                "$status"
-              ]
-            },
-            count: { $sum: 1 }
+      // 1. History Filter (HourlyStats)
+      const historyFilter = {};
+      if (apiNumber && apiNumber !== 'ALL') historyFilter.apiNumber = apiNumber;
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
+
+      historyFilter.date = { $lt: currentHourStart };
+      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
+      if (dateTo) historyFilter.date.$lte = new Date(dateTo);
+
+      // 2. Recent Filter (ApiLog) - ONLY used if HotStats cannot fulfill the request (e.g. complex regex)
+      // or if we are looking at a specific partial hour in the past (which shouldn't happen with 1h chunks)
+      const recentFilter = { ...filter };
+      recentFilter.date = {
+        $gte: dateFrom && new Date(dateFrom) > currentHourStart ? new Date(dateFrom) : currentHourStart,
+        $lte: now
+      };
+
+      // 3. HotStats Optimization
+      // If we are looking for the "Current Hour", we use the in-memory HotStats
+      const live = hotStats.getSummary();
+
+      // Helper to extract filtered stats from HotStats
+      const getFilteredHotStats = () => {
+        // If there's a customer filter, we MUST use MongoDB (too complex for simple in-memory)
+        if (isFilteredByCustomer) return null;
+
+        let total = live.totalRequests;
+        let success = live.successCount;
+        let methods = live.methodStats;
+        let servers = live.serverStats;
+
+        // Apply Server/API filters to HotStats if present
+        if (serverIdentifier || (apiNumber && apiNumber !== 'ALL')) {
+          // This is a simplified version; for precision with complex filters, 
+          // the dashboard will fall back to Mongo if needed.
+          // But for the main "1000 RPS" case (empty filter), this is lightning fast.
+          if (serverIdentifier && !apiNumber) {
+            total = live.serverStats[serverIdentifier] || 0;
+            // Simplified success rate per server is not stored, so we fallback
+            return null;
           }
+          if (apiNumber && apiNumber !== 'ALL' && !serverIdentifier) {
+            total = live.apiStats[apiNumber] || 0;
+            return null;
+          }
+          return null; // Fallback for combined filters
         }
-      ]),
 
-      // Live traffic (requests in last minute) - query database directly
-      ApiLog.countDocuments(liveTrafficFilter),
+        return {
+          total,
+          success,
+          methods: Object.entries(methods).map(([id, count]) => ({ _id: id, count })),
+          servers: Object.entries(servers).map(([id, count]) => ({ _id: id, count }))
+        };
+      };
 
-      // Dynamic server request counts (group by serverIdentifier)
-      ApiLog.aggregate([
-        { $match: filter },
-        { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
-      ])
-    ]);
+      const hot = getFilteredHotStats();
 
-    // Debug logging - check actual live traffic count and sample logs
-    console.log(`[Live Traffic] Found ${liveTraffic} requests in last 2 minutes`);
+      const [
+        totalActiveCustomers,
+        totalTrafficCountHistory,
+        totalTrafficCountRecent,
+        accessMethodStatsHistory,
+        accessMethodStatsRecent,
+        responseTypeStatsHistory,
+        responseTypeStatsRecent,
+        liveTrafficCount,
+        serverRequestStatsHistory,
+        serverRequestStatsRecent
+      ] = await Promise.all([
+        // Accurate unique customers
+        ApiLog.distinct('customerEmail', filter).then(emails => emails.length),
 
-    // Get a sample of recent logs to verify dates
-    const sampleRecentLogs = await ApiLog.find({})
-      .sort({ date: -1 })
-      .limit(5)
-      .select('date apiNumber customerEmail')
-      .lean();
+        // Total traffic
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          { $group: { _id: null, total: { $sum: '$totalRequests' } } }
+        ]).then(res => (res[0]?.total || 0)),
+        hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(recentFilter),
 
-    if (sampleRecentLogs.length > 0) {
-      console.log(`[Live Traffic] Sample of 5 most recent logs:`);
-      sampleRecentLogs.forEach((log, idx) => {
-        console.log(`  ${idx + 1}. Date: ${log.date.toISOString()} (${Math.round((now - log.date) / 1000)}s ago) - API: ${log.apiNumber}`);
+        // Access method
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          { $group: { _id: '$accessMethod', count: { $sum: '$totalRequests' } } }
+        ]),
+        hot ? Promise.resolve(hot.methods) : ApiLog.aggregate([
+          { $match: recentFilter },
+          { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
+        ]),
+
+        // Response type (Information = Success)
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          { $group: { _id: 'Information', count: { $sum: '$successCount' } } }
+        ]),
+        hot ? Promise.resolve([{ _id: 'Information', count: hot.success }]) : ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: {
+                $cond: [
+                  { $regexMatch: { input: "$status", regex: /^information$/i } },
+                  "Information",
+                  "$status"
+                ]
+              },
+              count: { $sum: 1 }
+            }
+          }
+        ]),
+
+        // Live traffic (HotStats already has this)
+        hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(liveTrafficFilter),
+
+        // Server stats
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          { $group: { _id: '$serverIdentifier', count: { $sum: '$totalRequests' } } }
+        ]),
+        hot ? Promise.resolve(hot.servers) : ApiLog.aggregate([
+          { $match: recentFilter },
+          { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
+        ])
+      ]);
+
+      // --- MERGE LOGIC ---
+      const totalTrafficCount = totalTrafficCountHistory + totalTrafficCountRecent;
+
+      const mergeStats = (history, recent) => {
+        const merged = {};
+        history.forEach(h => merged[h._id] = (merged[h._id] || 0) + h.count);
+        recent.forEach(r => merged[r._id] = (merged[r._id] || 0) + r.count);
+        return merged;
+      };
+
+      const accessMethodDistribution = mergeStats(accessMethodStatsHistory, accessMethodStatsRecent);
+      const responseTypeDistribution = mergeStats(responseTypeStatsHistory, responseTypeStatsRecent);
+      const serverRequestStats = mergeStats(serverRequestStatsHistory, serverRequestStatsRecent);
+
+      // Map server IPs to their request counts
+      const serverRequests = {};
+      addedServers.forEach(server => {
+        const serverIp = server.serverIp;
+        const identifier = serverIp.split('.').pop();
+        serverRequests[serverIp] = serverRequestStats[identifier] || serverRequestStats[serverIp] || 0;
       });
-    }
 
-    // Map server IPs to their request counts
-    // Convert server IPs to server identifiers for matching with logs
-    const serverRequests = {};
-    addedServers.forEach(server => {
-      const serverIp = server.serverIp;
-      // Find matching serverIdentifier in logs (might be last octet or full IP)
-      const matchingStat = serverRequestStats.find(stat =>
-        serverIp.endsWith(`.${stat._id}`) || stat._id === serverIp
-      );
-      serverRequests[serverIp] = matchingStat ? matchingStat.count : 0;
+      // Restore customer change percentage
+      let customerChangeText = 'Live data stream active';
+
+      if (yesterdayCustomerCount > 0) {
+        const customerChangePercent = ((totalActiveCustomers - yesterdayCustomerCount) / yesterdayCustomerCount) * 100;
+        const sign = customerChangePercent >= 0 ? '+' : '';
+        customerChangeText = `${sign}${customerChangePercent.toFixed(1)}% from comparison period`;
+      }
+
+      return {
+        liveTraffic: liveTrafficCount,
+        serverRequests,
+        customerChange: customerChangeText,
+        accessMethodDistribution,
+        responseTypeDistribution,
+        totalTrafficCount,
+        totalActiveCustomers
+      };
     });
-
-    // Calculate customer change percentage
-    let customerChangePercent = 0;
-    let customerChangeText = 'No change from yesterday';
-
-    if (yesterdayActiveCustomers > 0) {
-      customerChangePercent = ((totalActiveCustomers - yesterdayActiveCustomers) / yesterdayActiveCustomers) * 100;
-      const sign = customerChangePercent >= 0 ? '+' : '';
-      customerChangeText = `${sign}${customerChangePercent.toFixed(1)}% from yesterday`;
-    } else if (totalActiveCustomers > 0) {
-      customerChangeText = `${totalActiveCustomers} new customers today`;
-    }
 
     res.json({
       success: true,
-      data: {
-        totalActiveCustomers,
-        totalTrafficCount,
-        liveTraffic,
-        serverRequests,
-        customerChange: customerChangeText,
-        accessMethodDistribution: accessMethodStats.reduce((acc, item) => {
-          acc[item._id] = item.count;
-          return acc;
-        }, {}),
-        responseTypeDistribution: responseTypeStats.reduce((acc, item) => {
-          acc[item._id] = item.count;
-          return acc;
-        }, {})
-      }
+      data
     });
   } catch (error) {
     console.error('Error in getDashboardStats:', error);
@@ -207,60 +284,90 @@ export const getDashboardStats = async (req, res) => {
  * Get API response times
  */
 export const getApiResponseTimes = async (req, res) => {
+  const cacheKey = getCacheKey('responseTimes', req.query);
+
   try {
-    const { apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
+    const data = await withCache(cacheKey, async () => {
+      const { apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
 
-    const filter = {};
+      const filter = {};
+      if (apiNumber && apiNumber !== 'ALL') filter.apiNumber = apiNumber;
+      if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+      }
 
-    if (apiNumber && apiNumber !== 'ALL') {
-      filter.apiNumber = apiNumber;
-    }
+      const now = new Date();
+      const currentHourStart = new Date(now);
+      currentHourStart.setMinutes(0, 0, 0, 0);
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      const historyFilter = { date: { $lt: currentHourStart } };
+      if (apiNumber && apiNumber !== 'ALL') historyFilter.apiNumber = apiNumber;
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
+      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-    if (dateFrom || dateTo) {
-      filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom);
-      if (dateTo) filter.date.$lte = new Date(dateTo);
-    }
+      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
 
-    const responseTimeStats = await ApiLog.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: '$apiNumber',
-          avgResponseTime: { $avg: '$responseTime' },
-          minResponseTime: { $min: '$responseTime' },
-          maxResponseTime: { $max: '$responseTime' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { avgResponseTime: -1 } },
-      { $limit: 10 }
-    ]);
+      const [history, recent] = await Promise.all([
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              totalRT: { $sum: '$totalResponseTime' },
+              count: { $sum: '$totalRequests' },
+              minRT: { $min: '$minResponseTime' },
+              maxRT: { $max: '$maxResponseTime' }
+            }
+          }
+        ]),
+        ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              totalRT: { $sum: '$responseTime' },
+              minRT: { $min: '$responseTime' },
+              maxRT: { $max: '$responseTime' },
+              count: { $sum: 1 }
+            }
+          }
+        ])
+      ]);
 
-    const formattedData = responseTimeStats.map(stat => ({
-      apiNumber: stat._id,
-      apiName: apiMapping[stat._id] || 'Unknown',
-      avgResponseTime: Math.round(stat.avgResponseTime),
-      minResponseTime: stat.minResponseTime,
-      maxResponseTime: stat.maxResponseTime,
-      requestCount: stat.count
-    }));
+      const apiMap = {};
+      const merge = (results) => {
+        results.forEach(s => {
+          if (!apiMap[s._id]) apiMap[s._id] = { totalRT: 0, count: 0, min: Infinity, max: 0 };
+          apiMap[s._id].totalRT += s.totalRT;
+          apiMap[s._id].count += s.count;
+          if (s.minRT < apiMap[s._id].min) apiMap[s._id].min = s.minRT;
+          if (s.maxRT > apiMap[s._id].max) apiMap[s._id].max = s.maxRT;
+        });
+      };
 
-    res.json({
-      success: true,
-      data: formattedData
+      merge(history);
+      merge(recent);
+
+      return Object.entries(apiMap)
+        .map(([apiNumber, stats]) => ({
+          apiNumber,
+          apiName: apiMapping[apiNumber] || 'Unknown',
+          avgResponseTime: stats.count > 0 ? Math.round(stats.totalRT / stats.count) : 0,
+          minResponseTime: stats.min === Infinity ? 0 : stats.min,
+          maxResponseTime: stats.max,
+          requestCount: stats.count
+        }))
+        .sort((a, b) => b.avgResponseTime - a.avgResponseTime)
+        .slice(0, 10);
     });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Error in getApiResponseTimes:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching API response times',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching response times', error: error.message });
   }
 };
 
@@ -268,69 +375,87 @@ export const getApiResponseTimes = async (req, res) => {
  * Get API success rates
  */
 export const getApiSuccessRates = async (req, res) => {
+  const cacheKey = getCacheKey('successRates', req.query);
+
   try {
-    const { dateFrom, dateTo, serverIdentifier } = req.query;
+    const data = await withCache(cacheKey, async () => {
+      const { dateFrom, dateTo, serverIdentifier } = req.query;
 
-    const filter = {};
+      const filter = {};
+      if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+      }
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      const now = new Date();
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-    if (dateFrom || dateTo) {
-      filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom);
-      if (dateTo) filter.date.$lte = new Date(dateTo);
-    }
+      const historyFilter = { date: { $lt: oneHourAgo } };
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
+      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-    const successRates = await ApiLog.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: '$apiNumber',
-          total: { $sum: 1 },
-          successful: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: "$status", regex: /^information$/i } },
-                1,
-                0
-              ]
+      const recentFilter = { ...filter, date: { $gte: oneHourAgo, $lte: now } };
+
+      const [history, recent] = await Promise.all([
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: '$totalRequests' },
+              successful: { $sum: '$successCount' }
             }
           }
-        }
-      },
-      {
-        $project: {
-          apiNumber: '$_id',
-          successRate: {
-            $multiply: [{ $divide: ['$successful', '$total'] }, 100]
-          },
-          total: 1
-        }
-      },
-      { $sort: { total: -1 } },
-      { $limit: 10 }
-    ]);
+        ]),
+        ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: 1 },
+              successful: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: "$status", regex: /^information$/i } },
+                    1,
+                    0
+                  ]
+                }
+              }
+            }
+          }
+        ])
+      ]);
 
-    const formattedData = successRates.map(stat => ({
-      apiNumber: stat.apiNumber,
-      apiName: apiMapping[stat.apiNumber] || 'Unknown',
-      successRate: Math.round(stat.successRate * 100) / 100,
-      totalRequests: stat.total
-    }));
+      const apiMap = {};
+      const merge = (results) => {
+        results.forEach(stat => {
+          if (!apiMap[stat._id]) apiMap[stat._id] = { total: 0, successful: 0 };
+          apiMap[stat._id].total += stat.total;
+          apiMap[stat._id].successful += stat.successful;
+        });
+      };
 
-    res.json({
-      success: true,
-      data: formattedData
+      merge(history);
+      merge(recent);
+
+      return Object.entries(apiMap)
+        .map(([apiNumber, stats]) => ({
+          apiNumber,
+          apiName: apiMapping[apiNumber] || 'Unknown',
+          successRate: stats.total > 0 ? Math.round((stats.successful / stats.total) * 10000) / 100 : 0,
+          totalRequests: stats.total
+        }))
+        .sort((a, b) => b.totalRequests - a.totalRequests)
+        .slice(0, 10);
     });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Error in getApiSuccessRates:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching API success rates',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching success rates', error: error.message });
   }
 };
 
@@ -420,76 +545,117 @@ export const getLiveTraffic = async (req, res) => {
  * Get API details table data
  */
 export const getApiDetails = async (req, res) => {
+  const cacheKey = getCacheKey('apiDetails', req.query);
+
   try {
-    const { page = 1, limit = 10, apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
+    const { page = 1, limit = 10 } = req.query;
+    const result = await withCache(cacheKey, async () => {
+      const { apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
 
-    const filter = {};
+      const filter = {};
+      if (apiNumber && apiNumber !== 'ALL') filter.apiNumber = apiNumber;
+      if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+      }
 
-    if (apiNumber && apiNumber !== 'ALL') {
-      filter.apiNumber = apiNumber;
-    }
+      const now = new Date();
+      const currentHourStart = new Date(now);
+      currentHourStart.setMinutes(0, 0, 0, 0);
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      const historyFilter = { date: { $lt: currentHourStart } };
+      if (apiNumber && apiNumber !== 'ALL') historyFilter.apiNumber = apiNumber;
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
+      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-    if (dateFrom || dateTo) {
-      filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom);
-      if (dateTo) filter.date.$lte = new Date(dateTo);
-    }
+      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
 
-    const apiStats = await ApiLog.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: '$apiNumber',
-          successRate: {
-            $avg: {
-              $cond: [
-                { $regexMatch: { input: "$status", regex: /^information$/i } },
-                100,
-                0
-              ]
+      const [statsHistory, statsRecent, totalApis] = await Promise.all([
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              totalRT: { $sum: '$totalResponseTime' },
+              count: { $sum: '$totalRequests' },
+              successCount: { $sum: '$successCount' }
             }
-          },
-          avgResponseTime: { $avg: '$responseTime' },
-          requestCount: { $sum: 1 }
-        }
-      },
-      { $sort: { requestCount: -1 } },
-      { $skip: (page - 1) * limit },
-      { $limit: parseInt(limit) }
-    ]);
+          }
+        ]),
+        ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              totalRT: { $sum: '$responseTime' },
+              count: { $sum: 1 },
+              successCount: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: "$status", regex: /^information$/i } },
+                    1,
+                    0
+                  ]
+                }
+              }
+            }
+          }
+        ]),
+        // Combined distinct count
+        // HotStats Optimization: If no specific filters, we can skip API log scan
+        Promise.all([
+          HourlyStats.distinct('apiNumber', historyFilter),
+          hotStats.getSummary().totalRequests > 0
+            ? Promise.resolve(Object.keys(hotStats.getSummary().apiStats))
+            : ApiLog.distinct('apiNumber', { ...recentFilter, date: { $gte: currentHourStart } })
+        ]).then(([hist, rec]) => new Set([...hist, ...rec]).size)
+      ]);
 
-    const total = await ApiLog.distinct('apiNumber', filter).then(apis => apis.length);
+      const apiMap = {};
+      const merge = (results) => {
+        results.forEach(stat => {
+          if (!apiMap[stat._id]) apiMap[stat._id] = { totalRT: 0, count: 0, successCount: 0 };
+          apiMap[stat._id].totalRT += stat.totalRT;
+          apiMap[stat._id].count += stat.count;
+          apiMap[stat._id].successCount += stat.successCount;
+        });
+      };
 
-    const formattedData = apiStats.map(stat => ({
-      apiId: stat._id,
-      method: 'GET', // You might want to add method field to logs
-      path: apiMapping[stat._id] || 'Unknown',
-      successRate: `${Math.round(stat.successRate)}%`,
-      avgResponse: `${Math.round(stat.avgResponseTime)}ms`,
-      requestCount: stat.requestCount
-    }));
+      merge(statsHistory);
+      merge(statsRecent);
+
+      const fullStatsArray = Object.entries(apiMap)
+        .map(([apiId, stats]) => ({
+          apiId,
+          method: 'GET',
+          path: apiMapping[apiId] || 'Unknown',
+          successRate: stats.count > 0 ? `${Math.round((stats.successCount / stats.count) * 100)}%` : '0%',
+          avgResponse: stats.count > 0 ? `${Math.round(stats.totalRT / stats.count)}ms` : '0ms',
+          requestCount: stats.count
+        }))
+        .sort((a, b) => b.requestCount - a.requestCount);
+
+      return {
+        formattedData: fullStatsArray.slice((page - 1) * limit, page * limit),
+        totalApis
+      };
+    });
 
     res.json({
       success: true,
-      data: formattedData,
+      data: result.formattedData,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
+        totalPages: Math.ceil(result.totalApis / limit),
+        totalItems: result.totalApis,
         itemsPerPage: parseInt(limit)
       }
     });
   } catch (error) {
     console.error('Error in getApiDetails:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching API details',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching API details', error: error.message });
   }
 };
 
@@ -558,157 +724,195 @@ export const getCustomerLogs = async (req, res) => {
  * Get top 20 APIs with highest success rate
  */
 export const getTopSuccessApis = async (req, res) => {
+  const cacheKey = getCacheKey('topSuccess', req.query);
+
   try {
-    const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
-    const limitValue = limit ? parseInt(limit, 10) : 20;
+    const data = await withCache(cacheKey, async () => {
+      const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
+      const limitValue = limit ? parseInt(limit, 10) : 20;
 
-    const filter = {};
+      const filter = {};
+      if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+      }
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      const now = new Date();
+      const currentHourStart = new Date(now);
+      currentHourStart.setMinutes(0, 0, 0, 0);
 
-    if (dateFrom || dateTo) {
-      filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom);
-      if (dateTo) filter.date.$lte = new Date(dateTo);
-    }
+      const historyFilter = { date: { $lt: currentHourStart } };
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
+      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-    const apiStats = await ApiLog.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: '$apiNumber',
-          total: { $sum: 1 },
-          successful: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: "$status", regex: /^information$/i } },
-                1,
-                0
-              ]
+      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
+
+      const [history, recent] = await Promise.all([
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: '$totalRequests' },
+              successful: { $sum: '$successCount' },
+              totalRT: { $sum: '$totalResponseTime' }
             }
-          },
-          avgResponseTime: { $avg: '$responseTime' }
-        }
-      },
-      {
-        $project: {
-          apiNumber: '$_id',
-          successRate: {
-            $multiply: [{ $divide: ['$successful', '$total'] }, 100]
-          },
-          avgResponseTime: 1,
-          requestCount: '$total'
-        }
-      },
-      { $sort: { successRate: -1 } },
-      { $limit: limitValue }
-    ]);
+          }
+        ]),
+        ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: 1 },
+              successful: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: "$status", regex: /^information$/i } },
+                    1,
+                    0
+                  ]
+                }
+              },
+              totalRT: { $sum: '$responseTime' }
+            }
+          }
+        ])
+      ]);
 
-    const formattedData = apiStats.map(stat => ({
-      apiId: stat.apiNumber,
-      method: 'GET',
-      path: apiMapping[stat.apiNumber] || 'Unknown',
-      successRate: `${Math.round(stat.successRate)}%`,
-      avgResponse: `${Math.round(stat.avgResponseTime)}ms`,
-      requestCount: stat.requestCount
-    }));
+      const apiMap = {};
+      const merge = (results) => {
+        results.forEach(stat => {
+          if (!apiMap[stat._id]) apiMap[stat._id] = { total: 0, successful: 0, totalRT: 0 };
+          apiMap[stat._id].total += stat.total;
+          apiMap[stat._id].successful += stat.successful;
+          apiMap[stat._id].totalRT += stat.totalRT || stat.totalResponseTime || 0;
+        });
+      };
 
-    res.json({
-      success: true,
-      data: formattedData
+      merge(history);
+      merge(recent);
+
+      return Object.entries(apiMap)
+        .map(([apiId, stats]) => {
+          const successRate = stats.total > 0 ? (stats.successful / stats.total) * 100 : 0;
+          return {
+            apiId,
+            method: 'GET',
+            path: apiMapping[apiId] || 'Unknown',
+            successRate: `${Math.round(successRate)}%`,
+            avgResponse: stats.total > 0 ? `${Math.round(stats.totalRT / stats.total)}ms` : '0ms',
+            requestCount: stats.total,
+            _successRateNum: successRate
+          };
+        })
+        .sort((a, b) => b._successRateNum - a._successRateNum)
+        .slice(0, limitValue);
     });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Error in getTopSuccessApis:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching top success APIs',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching top success APIs', error: error.message });
   }
 };
 
-/**
- * Get top 20 APIs with highest error rate
- */
 export const getTopErrorApis = async (req, res) => {
+  const cacheKey = getCacheKey('topError', req.query);
+
   try {
-    const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
-    const limitValue = limit ? parseInt(limit, 10) : 20;
+    const data = await withCache(cacheKey, async () => {
+      const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
+      const limitValue = limit ? parseInt(limit, 10) : 20;
 
-    const filter = {};
+      const filter = {};
+      if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+      }
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      const now = new Date();
+      const currentHourStart = new Date(now);
+      currentHourStart.setMinutes(0, 0, 0, 0);
 
-    if (dateFrom || dateTo) {
-      filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom);
-      if (dateTo) filter.date.$lte = new Date(dateTo);
-    }
+      const historyFilter = { date: { $lt: currentHourStart } };
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
+      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-    const apiStats = await ApiLog.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: '$apiNumber',
-          total: { $sum: 1 },
-          errors: {
-            $sum: {
-              $cond: [
-                {
-                  $regexMatch: {
-                    input: "$status",
-                    regex: /^(error|critical|warning)$/i
-                  }
-                },
-                1,
-                0
-              ]
+      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
+
+      const [history, recent] = await Promise.all([
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: '$totalRequests' },
+              errors: { $sum: '$errorCount' },
+              totalRT: { $sum: '$totalResponseTime' }
             }
-          },
-          avgResponseTime: { $avg: '$responseTime' }
-        }
-      },
-      {
-        $project: {
-          apiNumber: '$_id',
-          errorRate: {
-            $multiply: [{ $divide: ['$errors', '$total'] }, 100]
-          },
-          successRate: {
-            $multiply: [{ $divide: [{ $subtract: ['$total', '$errors'] }, '$total'] }, 100]
-          },
-          avgResponseTime: 1,
-          requestCount: '$total'
-        }
-      },
-      { $sort: { errorRate: -1 } },
-      { $limit: limitValue }
-    ]);
+          }
+        ]),
+        ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: 1 },
+              errors: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: "$status", regex: /^(error|critical|warning)$/i } },
+                    1,
+                    0
+                  ]
+                }
+              },
+              totalRT: { $sum: '$responseTime' }
+            }
+          }
+        ])
+      ]);
 
-    const formattedData = apiStats.map(stat => ({
-      apiId: stat.apiNumber,
-      method: 'GET',
-      path: apiMapping[stat.apiNumber] || 'Unknown',
-      successRate: `${Math.round(stat.successRate)}%`,
-      avgResponse: `${Math.round(stat.avgResponseTime)}ms`,
-      requestCount: stat.requestCount
-    }));
+      const apiMap = {};
+      const merge = (results) => {
+        results.forEach(stat => {
+          if (!apiMap[stat._id]) apiMap[stat._id] = { total: 0, errors: 0, totalRT: 0 };
+          apiMap[stat._id].total += stat.total;
+          apiMap[stat._id].errors += stat.errors;
+          apiMap[stat._id].totalRT += stat.totalRT || stat.totalResponseTime || 0;
+        });
+      };
 
-    res.json({
-      success: true,
-      data: formattedData
+      merge(history);
+      merge(recent);
+
+      return Object.entries(apiMap)
+        .map(([apiId, stats]) => {
+          const errorRate = stats.total > 0 ? (stats.errors / stats.total) * 100 : 0;
+          const successRate = 100 - errorRate;
+          return {
+            apiId,
+            method: 'GET',
+            path: apiMapping[apiId] || 'Unknown',
+            successRate: `${Math.round(successRate)}%`,
+            avgResponse: stats.total > 0 ? `${Math.round(stats.totalRT / stats.total)}ms` : '0ms',
+            requestCount: stats.total,
+            _errorRateNum: errorRate
+          };
+        })
+        .sort((a, b) => b._errorRateNum - a._errorRateNum)
+        .slice(0, limitValue);
     });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Error in getTopErrorApis:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching top error APIs',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching top error APIs', error: error.message });
   }
 };
 
@@ -716,79 +920,99 @@ export const getTopErrorApis = async (req, res) => {
  * Get API success rate history over time for a specific API
  */
 export const getApiSuccessRateHistory = async (req, res) => {
+  const cacheKey = getCacheKey('successHistory', req.query);
+
   try {
-    const { apiNumber, hours = 24, dateFrom, dateTo, serverIdentifier } = req.query;
+    const data = await withCache(cacheKey, async () => {
+      const { apiNumber, hours = 24, dateFrom, dateTo, serverIdentifier } = req.query;
 
-    // Build query filter
-    const filter = {};
+      const hoursNum = parseInt(hours);
+      const now = new Date();
+      const startTime = dateFrom ? new Date(dateFrom) : new Date(now.getTime() - hoursNum * 60 * 60 * 1000);
+      const endTime = dateTo ? new Date(dateTo) : now;
+      const currentHourStart = new Date(now);
+      currentHourStart.setMinutes(0, 0, 0, 0);
 
-    if (apiNumber && apiNumber !== 'ALL') {
-      filter.apiNumber = apiNumber;
-    }
+      const historyFilter = { date: { $gte: startTime, $lt: currentHourStart } };
+      if (apiNumber && apiNumber !== 'ALL') historyFilter.apiNumber = apiNumber;
+      if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
 
-    if (serverIdentifier) {
-      filter.serverIdentifier = serverIdentifier;
-    }
+      const recentFilter = { date: { $gte: currentHourStart, $lte: endTime } };
+      if (apiNumber && apiNumber !== 'ALL') recentFilter.apiNumber = apiNumber;
+      if (serverIdentifier) recentFilter.serverIdentifier = serverIdentifier;
 
-    // Set time range - default to last 24 hours
-    const hoursNum = parseInt(hours);
-    const now = new Date();
-    const startTime = dateFrom ? new Date(dateFrom) : new Date(now.getTime() - hoursNum * 60 * 60 * 1000);
-    const endTime = dateTo ? new Date(dateTo) : now;
-
-    filter.date = { $gte: startTime, $lte: endTime };
-
-    // Group by hour and calculate success rate
-    const successRateData = await ApiLog.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$date' },
-            month: { $month: '$date' },
-            day: { $dayOfMonth: '$date' },
-            hour: { $hour: '$date' }
-          },
-          totalRequests: { $sum: 1 },
-          successRequests: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: "$status", regex: /^information$/i } },
-                1,
-                0
-              ]
+      const [history, recent] = await Promise.all([
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          {
+            $group: {
+              _id: {
+                year: { $year: '$date' },
+                month: { $month: '$date' },
+                day: { $dayOfMonth: '$date' },
+                hour: { $hour: '$date' }
+              },
+              total: { $sum: '$totalRequests' },
+              success: { $sum: '$successCount' },
+              timestamp: { $first: '$date' }
             }
-          },
-          timestamp: { $first: '$date' }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          timestamp: 1,
-          successRate: {
-            $multiply: [
-              { $divide: ['$successRequests', '$totalRequests'] },
-              100
-            ]
-          },
-          totalRequests: 1,
-          successRequests: 1
-        }
-      },
-      { $sort: { timestamp: 1 } }
-    ]);
+          }
+        ]),
+        ApiLog.aggregate([
+          { $match: recentFilter },
+          {
+            $group: {
+              _id: {
+                year: { $year: '$date' },
+                month: { $month: '$date' },
+                day: { $dayOfMonth: '$date' },
+                hour: { $hour: '$date' }
+              },
+              total: { $sum: 1 },
+              success: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: "$status", regex: /^information$/i } },
+                    1,
+                    0
+                  ]
+                }
+              },
+              timestamp: { $first: '$date' }
+            }
+          }
+        ])
+      ]);
 
-    res.json({
-      success: true,
-      data: successRateData
+      const mergedMap = new Map();
+      const merge = (results) => {
+        results.forEach(item => {
+          const key = `${item._id.year}-${item._id.month}-${item._id.day}-${item._id.hour}`;
+          if (!mergedMap.has(key)) {
+            mergedMap.set(key, { total: 0, success: 0, timestamp: item.timestamp });
+          }
+          const current = mergedMap.get(key);
+          current.total += item.total || item.totalRequests || 0;
+          current.success += item.success || item.successRequests || 0;
+        });
+      };
+
+      merge(history);
+      merge(recent);
+
+      return Array.from(mergedMap.values())
+        .map(item => ({
+          timestamp: item.timestamp,
+          successRate: item.total > 0 ? (item.success / item.total) * 100 : 0,
+          totalRequests: item.total,
+          successRequests: item.success
+        }))
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Error in getApiSuccessRateHistory:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching API success rate history',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching success rate history', error: error.message });
   }
 };

@@ -11,6 +11,7 @@ import serverHealthRoutes from './routes/serverHealth.js';
 import logIngestionRoutes from './routes/logIngestion.js';
 import authRoutes from './routes/auth.js';
 import { startSNMPMonitor } from './utils/snmpMonitor.js';
+import { startStatsScheduler } from './utils/statsScheduler.js';
 
 // Load environment variables
 dotenv.config();
@@ -128,6 +129,7 @@ app.listen(PORT, () => {
   if (process.env.NODE_ENV !== 'test') {
     setTimeout(() => {
       startSNMPMonitor();
+      startStatsScheduler();
     }, 2000);
   }
 });
