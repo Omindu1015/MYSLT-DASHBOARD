@@ -34,20 +34,22 @@ export const aggregateLogsToStats = async (startTime, endTime) => {
                     totalRequests: { $sum: 1 },
                     successCount: {
                         $sum: {
-                            $cond: [
-                                { $regexMatch: { input: "$status", regex: /^information$/i } },
-                                1,
-                                0
-                            ]
+                            $cond: [{ $eq: [{ $toLower: "$status" }, "information"] }, 1, 0]
+                        }
+                    },
+                    warningCount: {
+                        $sum: {
+                            $cond: [{ $eq: [{ $toLower: "$status" }, "warning"] }, 1, 0]
                         }
                     },
                     errorCount: {
                         $sum: {
-                            $cond: [
-                                { $regexMatch: { input: "$status", regex: /^(error|critical|warning)$/i } },
-                                1,
-                                0
-                            ]
+                            $cond: [{ $eq: [{ $toLower: "$status" }, "error"] }, 1, 0]
+                        }
+                    },
+                    criticalCount: {
+                        $sum: {
+                            $cond: [{ $eq: [{ $toLower: "$status" }, "critical"] }, 1, 0]
                         }
                     },
                     totalResponseTime: { $sum: "$responseTime" },
@@ -65,7 +67,9 @@ export const aggregateLogsToStats = async (startTime, endTime) => {
                     accessMethod: "$_id.accessMethod",
                     totalRequests: 1,
                     successCount: 1,
+                    warningCount: 1,
                     errorCount: 1,
+                    criticalCount: 1,
                     totalResponseTime: 1,
                     minResponseTime: 1,
                     maxResponseTime: 1,
@@ -92,7 +96,9 @@ export const aggregateLogsToStats = async (startTime, endTime) => {
                     $set: {
                         totalRequests: stat.totalRequests,
                         successCount: stat.successCount,
+                        warningCount: stat.warningCount || 0,
                         errorCount: stat.errorCount,
+                        criticalCount: stat.criticalCount || 0,
                         totalResponseTime: stat.totalResponseTime,
                         uniqueCustomersCount: stat.uniqueCustomersCount,
                         minResponseTime: stat.minResponseTime,

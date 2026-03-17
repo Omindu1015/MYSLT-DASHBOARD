@@ -84,7 +84,11 @@ class HotStats {
             uniqueCustomersCount: this.data.uniqueCustomers.size,
             avgResponseTime: this.data.totalRequests > 0
                 ? Math.round(this.data.totalResponseTime / this.data.totalRequests)
-                : 0
+                : 0,
+            statusDistribution: Object.entries(this.data.statusStats).map(([status, count]) => ({
+                _id: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
+                count
+            }))
         };
     }
 }

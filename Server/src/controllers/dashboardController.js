@@ -10,6 +10,7 @@ import hotStats from '../utils/hotStats.js';
  */
 export const getDashboardStats = async (req, res) => {
   const cacheKey = getCacheKey('stats', req.query);
+  console.log(`[Dashboard] Request received: ${JSON.stringify(req.query)}`);
 
   try {
     const data = await withCache(cacheKey, async () => {
@@ -115,6 +116,9 @@ export const getDashboardStats = async (req, res) => {
         $gte: dateFrom && new Date(dateFrom) > currentHourStart ? new Date(dateFrom) : currentHourStart,
         $lte: now
       };
+      console.log(`[Dashboard] historyFilter: ${JSON.stringify(historyFilter)}`);
+      console.log(`[Dashboard] recentFilter: ${JSON.stringify(recentFilter)}`);
+      console.log(`[Dashboard] hotStats summary total: ${hotStats.getSummary().totalRequests}`);
 
       // 3. HotStats Optimization
       // If we are looking for the "Current Hour", we use the in-memory HotStats
@@ -150,6 +154,7 @@ export const getDashboardStats = async (req, res) => {
         return {
           total,
           success,
+          statusDistribution: live.statusDistribution || [],
           methods: Object.entries(methods).map(([id, count]) => ({ _id: id, count })),
           servers: Object.entries(servers).map(([id, count]) => ({ _id: id, count }))
         };
@@ -189,18 +194,34 @@ export const getDashboardStats = async (req, res) => {
           { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
         ]),
 
-        // Response type (Information = Success)
+        // Response type distribution (History)
         HourlyStats.aggregate([
           { $match: historyFilter },
-          { $group: { _id: 'Information', count: { $sum: '$successCount' } } }
-        ]),
-        hot ? Promise.resolve([{ _id: 'Information', count: hot.success }]) : ApiLog.aggregate([
+          {
+            $group: {
+              _id: null,
+              Information: { $sum: '$successCount' },
+              Warning: { $sum: '$warningCount' },
+              Error: { $sum: '$errorCount' },
+              Critical: { $sum: '$criticalCount' }
+            }
+          }
+        ]).then(res => {
+          if (!res[0]) return [];
+          return [
+            { _id: 'Information', count: res[0].Information || 0 },
+            { _id: 'Warning', count: res[0].Warning || 0 },
+            { _id: 'Error', count: res[0].Error || 0 },
+            { _id: 'Critical', count: res[0].Critical || 0 }
+          ];
+        }),
+        hot ? Promise.resolve(hot.statusDistribution) : ApiLog.aggregate([
           { $match: recentFilter },
           {
             $group: {
               _id: {
                 $cond: [
-                  { $regexMatch: { input: "$status", regex: /^information$/i } },
+                  { $eq: [{ $toLower: "$status" }, "information"] },
                   "Information",
                   "$status"
                 ]
@@ -225,12 +246,14 @@ export const getDashboardStats = async (req, res) => {
       ]);
 
       // --- MERGE LOGIC ---
+      console.log(`[Dashboard] History Count: ${totalTrafficCountHistory}`);
+      console.log(`[Dashboard] Recent Count: ${totalTrafficCountRecent}`);
       const totalTrafficCount = totalTrafficCountHistory + totalTrafficCountRecent;
 
       const mergeStats = (history, recent) => {
         const merged = {};
-        history.forEach(h => merged[h._id] = (merged[h._id] || 0) + h.count);
-        recent.forEach(r => merged[r._id] = (merged[r._id] || 0) + r.count);
+        if (Array.isArray(history)) history.forEach(h => merged[h._id] = (merged[h._id] || 0) + h.count);
+        if (Array.isArray(recent)) recent.forEach(r => merged[r._id] = (merged[r._id] || 0) + r.count);
         return merged;
       };
 

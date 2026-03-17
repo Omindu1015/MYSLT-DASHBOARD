@@ -29,7 +29,15 @@ const dailyStatsSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    warningCount: {
+        type: Number,
+        default: 0
+    },
     errorCount: {
+        type: Number,
+        default: 0
+    },
+    criticalCount: {
         type: Number,
         default: 0
     },
