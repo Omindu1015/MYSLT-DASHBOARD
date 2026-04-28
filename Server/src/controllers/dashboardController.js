@@ -177,26 +177,8 @@ export const getDashboardStats = async (req, res) => {
         serverRequestStatsHistory,
         serverRequestStatsRecent
       ] = await Promise.all([
-        // Active unique customers: For large ranges (>= 24h), approximate using HourlyStats to prevent timeouts
-        (async () => {
-          const timeRangeMs = (filter.date?.$lte?.getTime() || Date.now()) - (filter.date?.$gte?.getTime() || 0);
-          if (timeRangeMs > 24 * 60 * 60 * 1000 && !customerEmail) {
-            return HourlyStats.aggregate([
-              { $match: historyFilter },
-              { $group: { _id: null, total: { $sum: '$uniqueCustomersCount' } } }
-            ]).then(res => (res[0]?.total || 0));
-          }
-          return ApiLog.distinct('customerEmail', filter).then(emails => emails.length);
-        })(),
-
-        // Total traffic
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          { $group: { _id: null, total: { $sum: '$totalRequests' } } }
-        ]).then(res => (res[0]?.total || 0)),
-        hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(recentFilter),
-
-        // Access method
+        // Active unique customers: Reverted to distinct to prevent hourly sum duplication
+        ApiLog.distinct('customerEmail', filter).then(emails => emails.lengthAccess method
         HourlyStats.aggregate([
           { $match: historyFilter },
           { $group: { _id: '$accessMethod', count: { $sum: '$totalRequests' } } }
