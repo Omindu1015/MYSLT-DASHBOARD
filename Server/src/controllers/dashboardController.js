@@ -91,10 +91,7 @@ export const getDashboardStats = async (req, res) => {
       if (apiNumber && apiNumber !== 'ALL') yesterdayCustomerFilter.apiNumber = apiNumber;
       if (serverIdentifier) yesterdayCustomerFilter.serverIdentifier = serverIdentifier;
 
-      const yesterdayCustomerCount = await HourlyStats.aggregate([
-        { $match: yesterdayCustomerFilter },
-        { $group: { _id: null, total: { $sum: '$uniqueCustomersCount' } } }
-      ]).then(res => (res[0]?.total || 0));
+      const yesterdayCustomerCount = await ApiLog.distinct('customerEmail', yesterdayCustomerFilter).then(res => res.length);
 
       // --- HYBRID QUERY ENGINE ---
       const currentHourStart = new Date(now);
@@ -178,7 +175,16 @@ export const getDashboardStats = async (req, res) => {
         serverRequestStatsRecent
       ] = await Promise.all([
         // Active unique customers: Reverted to distinct to prevent hourly sum duplication
-        ApiLog.distinct('customerEmail', filter).then(emails => emails.lengthAccess method
+        ApiLog.distinct('customerEmail', filter).then(emails => emails.length),
+
+        // Total traffic
+        HourlyStats.aggregate([
+          { $match: historyFilter },
+          { $group: { _id: null, total: { $sum: '$totalRequests' } } }
+        ]).then(res => (res[0]?.total || 0)),
+        hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(recentFilter),
+
+        // Access method (History)
         HourlyStats.aggregate([
           { $match: historyFilter },
           { $group: { _id: '$accessMethod', count: { $sum: '$totalRequests' } } }
