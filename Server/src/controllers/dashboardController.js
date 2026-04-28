@@ -26,9 +26,9 @@ export const getDashboardStats = async (req, res) => {
 
       // Support both email and phone number in customerEmail field (username)
       if (customerEmail) {
-        // Use prefix regex to ensure MongoDB can use B-Tree index instead of full collection scan
+        // Use prefix regex to ensure MongoDB can use B-Tree index
         const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-        filter.customerEmail = { $regex: `^${safePrefix}`, $options: 'i' };
+        filter.customerEmail = { $regex: `^${safePrefix}` }; 
       }
 
       if (dateFrom || dateTo) {
@@ -54,7 +54,7 @@ export const getDashboardStats = async (req, res) => {
       }
       if (customerEmail) {
         const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-        liveTrafficFilter.customerEmail = { $regex: `^${safePrefix}`, $options: 'i' };
+        liveTrafficFilter.customerEmail = { $regex: `^${safePrefix}` };
       }
       if (serverIdentifier) {
         liveTrafficFilter.serverIdentifier = serverIdentifier;
@@ -91,7 +91,11 @@ export const getDashboardStats = async (req, res) => {
       if (apiNumber && apiNumber !== 'ALL') yesterdayCustomerFilter.apiNumber = apiNumber;
       if (serverIdentifier) yesterdayCustomerFilter.serverIdentifier = serverIdentifier;
 
-      const yesterdayCustomerCount = await ApiLog.distinct('customerEmail', yesterdayCustomerFilter).then(res => res.length);
+      const yesterdayCustomerCount = await ApiLog.aggregate([
+        { $match: yesterdayCustomerFilter },
+        { $group: { _id: '$customerEmail' } },
+        { $count: 'count' }
+      ]).then(res => res[0]?.count || 0);
 
       // --- HYBRID QUERY ENGINE ---
       const currentHourStart = new Date(now);
@@ -174,8 +178,12 @@ export const getDashboardStats = async (req, res) => {
         serverRequestStatsHistory,
         serverRequestStatsRecent
       ] = await Promise.all([
-        // Active unique customers: Reverted to distinct to prevent hourly sum duplication
-        ApiLog.distinct('customerEmail', filter).then(emails => emails.length),
+        // Active unique customers: Using aggregation to prevent 16MB distinct limit error with 400k+ customers
+        ApiLog.aggregate([
+          { $match: filter },
+          { $group: { _id: '$customerEmail' } },
+          { $count: 'count' }
+        ]).then(res => res[0]?.count || 0),
 
         // Total traffic
         HourlyStats.aggregate([
@@ -722,8 +730,11 @@ export const getCustomerLogs = async (req, res) => {
 
     // Search for logs matching the username (customerEmail field)
     const safePrefix = username.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    
+    // Optimization: If it's a phone number or we want speed, we MUST avoid the 'i' flag. 
+    // Standard B-Tree indexes in MongoDB are case-sensitive.
     const logs = await ApiLog.find({
-      customerEmail: { $regex: `^${safePrefix}`, $options: 'i' }
+      customerEmail: { $regex: `^${safePrefix}` } // Removed 'i' to enable index usage
     })
       .sort({ date: -1 })
       .limit(100)
