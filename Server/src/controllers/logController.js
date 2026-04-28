@@ -41,22 +41,21 @@ const parseTimestampToMs = (raw) => {
   const str = String(raw).trim();
   const n = parseInt(str);
   if (isNaN(n)) return Date.now();
-  const len = str.replace('-', '').length; // ignore sign
 
-  let ms;
-  if (len >= 18) ms = Math.floor(n / 1_000_000); // nanoseconds
-  else if (len >= 15) ms = Math.floor(n / 1_000);     // microseconds
-  else if (len >= 12) ms = n;                          // milliseconds
-  else ms = n * 1_000;                                 // seconds
-
-  // Fix: If date is in the far future (Year 3000+), subtract 1970 years
-  // This handles Windows timestamps that start from year 0 instead of 1970
-  let date = new Date(ms);
-  if (date.getFullYear() > 3000) {
-    date.setFullYear(date.getFullYear() - 1970);
-    return date.getTime();
+  const DOTNET_TO_UNIX_OFFSET_MS = 62135596800000;
+  
+  if (n > DOTNET_TO_UNIX_OFFSET_MS) {
+    let correctedMs = n - DOTNET_TO_UNIX_OFFSET_MS;
+    const IST_TO_UTC_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    correctedMs -= IST_TO_UTC_OFFSET_MS;
+    return correctedMs;
   }
-  return ms;
+
+  const len = str.replace('-', '').length;
+  if (len >= 18) return Math.floor(n / 1_000_000);
+  if (len >= 15) return Math.floor(n / 1_000);
+  if (len >= 12) return n;
+  return n * 1_000;
 };
 
 /**
