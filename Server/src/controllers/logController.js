@@ -75,12 +75,10 @@ const parseLogLine = (line, remoteServerId) => {
   const finalServerId = serverIdentifier || remoteServerId;
 
   return {
-    startTimestamp,
     accessMethod,
     customerEmail,
     status,
     apiNumber,
-    endTimestamp,
     responseTime: parseInt(responseTime) || 0,
     serverIdentifier: finalServerId,
     date: new Date(parseTimestampToMs(startTimestamp))
@@ -179,12 +177,18 @@ export const ingestLogStream = async (req, res) => {
           ? new Date(parseFloat(log.date) * 1000)
           : new Date(parseTimestampToMs(log.startTimestamp));
 
-        return {
+        const processedLog = {
           ...log,
           responseTime: parseInt(log.responseTime) || 0,
           date: date,
           serverIdentifier: log.serverIdentifier || serverIdentifier
         };
+        
+        // Remove raw timestamps to save DB space
+        delete processedLog.startTimestamp;
+        delete processedLog.endTimestamp;
+        
+        return processedLog;
       });
 
       if (parsedLogs.length > 0) {

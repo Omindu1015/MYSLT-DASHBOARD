@@ -1,11 +1,6 @@
 import mongoose from 'mongoose';
 
 const apiLogSchema = new mongoose.Schema({
-  startTimestamp: {
-    type: String,
-    required: true,
-    index: true
-  },
   accessMethod: {
     type: String,
     required: true,
@@ -28,10 +23,6 @@ const apiLogSchema = new mongoose.Schema({
     required: true,
     index: true
   },
-  endTimestamp: {
-    type: String,
-    required: true
-  },
   responseTime: {
     type: Number,
     required: true
@@ -47,7 +38,7 @@ const apiLogSchema = new mongoose.Schema({
     index: true
   }
 }, {
-  timestamps: true
+  timestamps: false
 });
 
 // Indexes for efficient querying

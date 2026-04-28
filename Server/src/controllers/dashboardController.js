@@ -26,7 +26,9 @@ export const getDashboardStats = async (req, res) => {
 
       // Support both email and phone number in customerEmail field (username)
       if (customerEmail) {
-        filter.customerEmail = { $regex: customerEmail, $options: 'i' };
+        // Use prefix regex to ensure MongoDB can use B-Tree index instead of full collection scan
+        const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        filter.customerEmail = { $regex: `^${safePrefix}`, $options: 'i' };
       }
 
       if (dateFrom || dateTo) {
@@ -51,7 +53,8 @@ export const getDashboardStats = async (req, res) => {
         liveTrafficFilter.apiNumber = apiNumber;
       }
       if (customerEmail) {
-        liveTrafficFilter.customerEmail = { $regex: customerEmail, $options: 'i' };
+        const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        liveTrafficFilter.customerEmail = { $regex: `^${safePrefix}`, $options: 'i' };
       }
       if (serverIdentifier) {
         liveTrafficFilter.serverIdentifier = serverIdentifier;
@@ -174,8 +177,17 @@ export const getDashboardStats = async (req, res) => {
         serverRequestStatsHistory,
         serverRequestStatsRecent
       ] = await Promise.all([
-        // Accurate unique customers
-        ApiLog.distinct('customerEmail', filter).then(emails => emails.length),
+        // Active unique customers: For large ranges (>= 24h), approximate using HourlyStats to prevent timeouts
+        (async () => {
+          const timeRangeMs = (filter.date?.$lte?.getTime() || Date.now()) - (filter.date?.$gte?.getTime() || 0);
+          if (timeRangeMs > 24 * 60 * 60 * 1000 && !customerEmail) {
+            return HourlyStats.aggregate([
+              { $match: historyFilter },
+              { $group: { _id: null, total: { $sum: '$uniqueCustomersCount' } } }
+            ]).then(res => (res[0]?.total || 0));
+          }
+          return ApiLog.distinct('customerEmail', filter).then(emails => emails.length);
+        })(),
 
         // Total traffic
         HourlyStats.aggregate([
@@ -721,17 +733,24 @@ export const getCustomerLogs = async (req, res) => {
     }
 
     // Search for logs matching the username (customerEmail field)
+    const safePrefix = username.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
     const logs = await ApiLog.find({
-      customerEmail: { $regex: username, $options: 'i' }
+      customerEmail: { $regex: `^${safePrefix}`, $options: 'i' }
     })
       .sort({ date: -1 })
       .limit(100)
-      .select('startTimestamp accessMethod status apiNumber endTimestamp responseTime serverIdentifier')
+      .select('date accessMethod status apiNumber responseTime serverIdentifier')
       .lean();
+
+    // Map date back to startTimestamp for backend compatibility with React frontend
+    const mappedLogs = logs.map(log => ({
+      ...log,
+      startTimestamp: new Date(log.date).getTime().toString()
+    }));
 
     res.json({
       success: true,
-      data: logs
+      data: mappedLogs
     });
   } catch (error) {
     console.error('Error in getCustomerLogs:', error);
