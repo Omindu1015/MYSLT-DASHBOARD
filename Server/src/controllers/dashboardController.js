@@ -59,10 +59,10 @@ export const getDashboardStats = async (req, res) => {
       if (serverIdentifier) {
         liveTrafficFilter.serverIdentifier = serverIdentifier;
       }
-      // Always use expanded window for live traffic to account for sync issues
+      // Check for actual live traffic (last 2 minutes) + a small future buffer for drift
       liveTrafficFilter.date = {
-        $gte: new Date(now.getTime() - 600000), // Last 10 minutes
-        $lte: new Date(now.getTime() + 300000)  // 5 minutes future buffer
+        $gte: twoMinutesAgo,
+        $lte: new Date(now.getTime() + 60000)  // 1 min future buffer
       };
 
       // Debug logging

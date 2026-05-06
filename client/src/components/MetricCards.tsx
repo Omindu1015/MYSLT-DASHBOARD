@@ -206,7 +206,7 @@ export function MetricCards() {
     title: 'Live Traffic',
     value: stats?.liveTraffic?.toString() || '0',
     numericValue: stats?.liveTraffic || 0,
-    change: ' Today live traffic',
+    change: 'Last 2 minutes',
     icon: ActivityIcon,
     color: 'bg-emerald-500',
     textColor: 'text-emerald-100',
