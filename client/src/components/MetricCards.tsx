@@ -143,15 +143,15 @@ export function MetricCards() {
     if (stats.totalTrafficCount === 0) {
       sendAlert('Total Traffic Count', 0);
     }
-    if (stats.totalTrafficCount > 500000) {
-      sendAlert('Total Traffic Count', stats.totalTrafficCount, 500000);
+    if (stats.totalTrafficCount > 40000000) {
+      sendAlert('Total Traffic Count', stats.totalTrafficCount, 40000000);
     }
 
     if (stats.liveTraffic === 0) {
       sendAlert('Live Traffic', 0);
     }
-    if (stats.liveTraffic > 200) {
-      sendAlert('Live Traffic', stats.liveTraffic, 200);
+    if (stats.liveTraffic > 300000) {
+      sendAlert('Live Traffic', stats.liveTraffic, 300000);
     }
 
     // Check server metrics
@@ -160,8 +160,8 @@ export function MetricCards() {
         if (count === 0) {
           sendAlert('Number of Requests', 0, undefined, ip);
         }
-        if (count > 100000) {
-          sendAlert('Number of Requests', count, 100000, ip);
+        if (count > 30000000) {
+          sendAlert('Number of Requests', count, 30000000, ip);
         }
       });
     }
@@ -200,18 +200,18 @@ export function MetricCards() {
     icon: TrendingUpIcon,
     color: 'bg-green-500',
     textColor: 'text-green-100',
-    threshold: 500000,
+    threshold: 40000000,
     alertOnZero: true
   }, {
     title: 'Live Traffic',
     value: stats?.liveTraffic?.toString() || '0',
     numericValue: stats?.liveTraffic || 0,
-    change: 'Last 2 minutes',
+    change: ' Today live traffic',
     icon: ActivityIcon,
     color: 'bg-emerald-500',
     textColor: 'text-emerald-100',
     badge: 'LIVE',
-    threshold: 200,
+    threshold: 300000,
     alertOnZero: true
   }];
 
@@ -224,7 +224,7 @@ export function MetricCards() {
         change: ip,
         icon: ServerIcon,
         ...serverColors[index % serverColors.length],
-        threshold: 100000,
+        threshold: 30000000,
         alertOnZero: true,
         serverIp: ip
       }))
