@@ -68,9 +68,9 @@ import { dashboardApi } from '../services/api';
 
 export function ResponseTypeChart() {
   const [data, setData] = useState([
-    { name: 'Information', value: 0 },
+    { name: 'Success', value: 0 },
     { name: 'Warning', value: 0 },
-    { name: 'Error', value: 0 }
+    { name: 'Failed', value: 0 }
   ]);
 
   useEffect(() => {
@@ -83,18 +83,18 @@ export function ResponseTypeChart() {
         if (response.success && response.data.responseTypeDistribution) {
           const dist = response.data.responseTypeDistribution;
           setData([
-            { name: 'Information', value: dist.Information || 0 },
+            { name: 'Success', value: dist.Information || 0 },
             { name: 'Warning', value: dist.Warning || 0 },
-            { name: 'Error', value: dist.Error || 0 }
+            { name: 'Failed', value: dist.Error || 0 }
           ]);
         }
       } catch (error) {
         console.error('Error fetching response type data:', error);
         // Clear data when backend connection fails
         setData([
-          { name: 'Information', value: 0 },
+          { name: 'Success', value: 0 },
           { name: 'Warning', value: 0 },
-          { name: 'Error', value: 0 }
+          { name: 'Failed', value: 0 }
         ]);
       }
     };
