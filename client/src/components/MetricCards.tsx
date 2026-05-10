@@ -186,32 +186,32 @@ export function MetricCards() {
     title: 'Total Active Customers',
     value: stats?.totalActiveCustomers.toString() || '0',
     numericValue: stats?.totalActiveCustomers || 0,
-    change: stats?.customerChange || 'No data',
+    change: '',
     icon: UsersIcon,
     color: 'bg-blue-500',
     textColor: 'text-blue-100',
     threshold: 5000,
     alertOnZero: true
   }, {
-    title: 'Total Traffic Count',
-    value: stats?.totalTrafficCount.toLocaleString() || '0',
-    numericValue: stats?.totalTrafficCount || 0,
-    change: '+8% from yesterday',
-    icon: TrendingUpIcon,
-    color: 'bg-green-500',
-    textColor: 'text-green-100',
-    threshold: 40000000,
-    alertOnZero: true
-  }, {
     title: 'Live Traffic',
     value: stats?.liveTraffic?.toString() || '0',
     numericValue: stats?.liveTraffic || 0,
-    change: ' Today live traffic',
+    change: '',
     icon: ActivityIcon,
     color: 'bg-emerald-500',
     textColor: 'text-emerald-100',
     badge: 'LIVE',
     threshold: 300000,
+    alertOnZero: true
+  }, {
+    title: 'Total Traffic Count',
+    value: stats?.totalTrafficCount.toLocaleString() || '0',
+    numericValue: stats?.totalTrafficCount || 0,
+    change: '',
+    icon: TrendingUpIcon,
+    color: 'bg-green-500',
+    textColor: 'text-green-100',
+    threshold: 40000000,
     alertOnZero: true
   }];
 
@@ -270,7 +270,7 @@ export function MetricCards() {
                   {metric.title}
                 </p>
                 <p className="text-2xl font-bold mb-0.5">{metric.value}</p>
-                <p className={`text-xs ${metric.textColor}`}>{metric.change}</p>
+                {metric.change && <p className={`text-xs ${metric.textColor}`}>{metric.change}</p>}
               </div>
             </div>
           </div>
