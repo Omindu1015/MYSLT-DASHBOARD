@@ -154,8 +154,8 @@ export function FilterSection() {
   const [customerLogs, setCustomerLogs] = useState<CustomerLog[]>([]);
   const [loadingCustomerData, setLoadingCustomerData] = useState(false);
   
-  // Check if user is authenticated
-  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+  // Removed authentication check for rendering
+  const isAuthenticated = true; // Always allow the filter to show
 
   // Check if any filters are active
   const hasActiveFilters = () => {
