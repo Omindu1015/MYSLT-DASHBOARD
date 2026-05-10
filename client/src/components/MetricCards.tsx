@@ -211,7 +211,7 @@ export function MetricCards() {
     threshold: 300000,
     alertOnZero: true
   }, {
-    title: 'Total Traffic Count',
+    title: 'Total Request Count',
     value: stats?.totalTrafficCount.toLocaleString() || '0',
     numericValue: stats?.totalTrafficCount || 0,
     change: '',
