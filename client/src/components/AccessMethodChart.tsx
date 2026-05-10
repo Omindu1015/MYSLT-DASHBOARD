@@ -7,7 +7,14 @@ interface AccessMethod {
   value: number;
 }
 
-const DEFAULT_COLORS = ['#06b6d4', '#0891b2', '#a855f7', '#14b8a6', '#f59e0b', '#10b981'];
+const DEFAULT_COLORS = [
+  '#3b82f6', // Blue
+  '#10b981', // Green
+  '#f59e0b', // Orange/Amber
+  '#a855f7', // Purple
+  '#ef4444', // Red
+  '#ec4899', // Pink
+];
 
 export function AccessMethodChart() {
   const [data, setData] = useState<AccessMethod[]>([]);
