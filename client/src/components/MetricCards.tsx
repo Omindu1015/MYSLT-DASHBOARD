@@ -181,6 +181,13 @@ export function MetricCards() {
     { color: 'bg-orange-500', textColor: 'text-orange-100' },
   ];
 
+  // Helper method to get dynamic color for Total Active Customers
+  const getActiveCustomersColor = (value: number) => {
+    if (value < 500) return 'bg-red-500';
+    if (value > 2000) return 'bg-lime-500'; // Bright Green/Lime for high numbers
+    return 'bg-blue-500';
+  };
+
   // Base metrics (always shown)
   const baseMetrics: MetricCard[] = [{
     title: 'Total Active Customers',
@@ -188,8 +195,8 @@ export function MetricCards() {
     numericValue: stats?.totalActiveCustomers || 0,
     change: '',
     icon: UsersIcon,
-    color: 'bg-blue-500',
-    textColor: 'text-blue-100',
+    color: getActiveCustomersColor(stats?.totalActiveCustomers || 0),
+    textColor: 'text-white',
     threshold: 5000,
     alertOnZero: true
   }, {
