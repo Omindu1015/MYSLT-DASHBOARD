@@ -603,7 +603,9 @@ export function FilterSection() {
                         <tbody>
                           {customerLogs.map((log, index) => (
                             <tr key={index} className="border-t border-slate-600 hover:bg-slate-600/50 transition-colors">
-                              <td className="py-3 px-4 text-slate-300">{log.startTimestamp}</td>
+                              <td className="py-3 px-4 text-slate-300">
+                                {new Date(parseInt(log.startTimestamp)).toLocaleString()}
+                              </td>
                               <td className="py-3 px-4 text-slate-300">{log.apiNumber}</td>
                               <td className="py-3 px-4 text-slate-300">{log.accessMethod}</td>
                               <td className="py-3 px-4">
