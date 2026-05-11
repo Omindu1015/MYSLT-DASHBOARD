@@ -269,8 +269,15 @@ export function MetricCards() {
               </div>
             )}
             <div className="space-y-2">
-              <div className="bg-white/20 p-2 rounded-lg w-fit">
-                <metric.icon size={15} />
+              <div className="flex items-center gap-2">
+                <div className="bg-white/20 p-2 rounded-lg w-fit">
+                  <metric.icon size={15} />
+                </div>
+                {metric.serverIp && (
+                  <span className="text-lg font-bold opacity-90">
+                    {metric.serverIp.split('.').pop()}
+                  </span>
+                )}
               </div>
               <div>
                 <p className={`text-xs ${metric.textColor} mb-1`}>
