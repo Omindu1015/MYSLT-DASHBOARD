@@ -171,6 +171,7 @@ export function ResponseTypeChart() {
               borderRadius: '8px',
               color: '#fff'
             }} 
+            itemStyle={{ color: '#fff' }}
             cursor={{fill: 'rgba(255, 255, 255, 0.1)'}}
           />
           <Bar 
