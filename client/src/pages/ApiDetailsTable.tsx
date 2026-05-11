@@ -80,6 +80,7 @@
 
  
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { dashboardApi } from '../services/api';
 import { TrendingUp, TrendingDown, List, Eye } from 'lucide-react';
 import { ApiSuccessRateModal } from '../components/ApiSuccessRateModal';
@@ -96,9 +97,12 @@ interface ApiData {
 type FilterMode = 'all' | 'success' | 'error';
 
 export function ApiDetailsTable() {
+  const location = useLocation();
   const [apiData, setApiData] = useState<ApiData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [filterMode, setFilterMode] = useState<FilterMode>(
+    (location.state as any)?.activeTab || 'all'
+  );
   const [selectedApi, setSelectedApi] = useState<ApiData | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 

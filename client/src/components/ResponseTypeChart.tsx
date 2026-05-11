@@ -63,10 +63,12 @@
 
  
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from 'recharts';
 import { dashboardApi } from '../services/api';
 
 export function ResponseTypeChart() {
+  const navigate = useNavigate();
   const [data, setData] = useState([
     { name: 'Success', value: 0 },
     { name: 'Warning', value: 0 },
@@ -169,8 +171,20 @@ export function ResponseTypeChart() {
               borderRadius: '8px',
               color: '#fff'
             }} 
+            cursor={{fill: 'rgba(255, 255, 255, 0.1)'}}
           />
-          <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+          <Bar 
+            dataKey="value" 
+            radius={[8, 8, 0, 0]}
+            onClick={(data, index) => {
+              if (data.name === 'Success') {
+                navigate('/api-details', { state: { activeTab: 'success' } });
+              } else if (data.name === 'Failed') {
+                navigate('/api-details', { state: { activeTab: 'error' } });
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+          >
             <Cell fill="url(#blueGradient)" />
             <Cell fill="url(#orangeGradient)" />
             <Cell fill="url(#redGradient)" />
