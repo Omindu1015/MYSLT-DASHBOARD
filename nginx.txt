@@ -19,14 +19,18 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
+    # Global security hardening
+    server_tokens off; # Hides Nginx version
+    
     # Global header for verification
     add_header X-Nginx-Config "MySLT-Dashboard-v1";
     
     # FIXED: Security Headers (Vulnerability Mitigation)
     add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header Content-Security-Policy "frame-ancestors 'self';" always;
+    add_header Content-Security-Policy "default-src 'self' https://api.emailjs.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.emailjs.com; frame-ancestors 'self';" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
 
     # 1. Frontend: React Application
     location / {
@@ -38,8 +42,8 @@ server {
     # FIXED: Cache Control for Auth-Sensitive Pages
     location ~* /(login|admin) {
         root /var/www/MYSLT-DASHBOARD/client/dist;
-        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate";
-        add_header Pragma "no-cache";
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate" always;
+        add_header Pragma "no-cache" always;
         try_files $uri $uri/ /index.html;
     }
 
@@ -54,6 +58,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Hide backend technology info
+        proxy_hide_header X-Powered-By;
     }
 
     # Custom JSON error handler for internal errors
