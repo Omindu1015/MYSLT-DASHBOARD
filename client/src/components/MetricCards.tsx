@@ -228,7 +228,7 @@ export function MetricCards() {
         title: 'Number of Requests',
         value: count.toLocaleString(),
         numericValue: count,
-        change: ip,
+        change: `Server ${ip.split('.').pop()}`,
         icon: ServerIcon,
         ...serverColors[index % serverColors.length],
         threshold: 30000000,
@@ -334,7 +334,7 @@ export function MetricCards() {
 //     {
 //       title: 'Number of Requests',
 //       value: 2481,
-//       change: '172.25.37.16',
+//       change: 'Server A',
 //       icon: Server,
 //       color: 'bg-cyan-500',
 //       textColor: 'text-cyan-100',
@@ -343,7 +343,7 @@ export function MetricCards() {
 //     {
 //       title: 'Number of Requests',
 //       value: 2472,
-//       change: '172.25.37.21',
+//       change: 'Server B',
 //       icon: Server,
 //       color: 'bg-purple-500',
 //       textColor: 'text-purple-100',
@@ -352,7 +352,7 @@ export function MetricCards() {
 //     {
 //       title: 'Number of Requests',
 //       value: 1847,
-//       change: '172.25.37.138',
+//       change: 'Server C',
 //       icon: Server,
 //       color: 'bg-indigo-500',
 //       textColor: 'text-indigo-100',

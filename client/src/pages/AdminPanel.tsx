@@ -319,7 +319,7 @@ export function AdminPanel() {
                   type="text"
                   value={newServerIP}
                   onChange={(e) => setNewServerIP(e.target.value)}
-                  placeholder="e.g., 172.25.37.16"
+                  placeholder="e.g., 192.168.1.1"
                   className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border border-slate-600"
                 />
               </div>

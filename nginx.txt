@@ -21,11 +21,25 @@ server {
 
     # Global header for verification
     add_header X-Nginx-Config "MySLT-Dashboard-v1";
+    
+    # FIXED: Security Headers (Vulnerability Mitigation)
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Content-Security-Policy "frame-ancestors 'self';" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
 
     # 1. Frontend: React Application
     location / {
         root /var/www/MYSLT-DASHBOARD/client/dist;
         index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # FIXED: Cache Control for Auth-Sensitive Pages
+    location ~* /(login|admin) {
+        root /var/www/MYSLT-DASHBOARD/client/dist;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate";
+        add_header Pragma "no-cache";
         try_files $uri $uri/ /index.html;
     }
 
