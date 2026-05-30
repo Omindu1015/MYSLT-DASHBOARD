@@ -88,7 +88,7 @@
 
 
 import { useState, useEffect } from 'react';
-import { Filter, ChevronDown, ChevronUp, RefreshCw, X, Search } from 'lucide-react';
+import { Filter, ChevronDown, ChevronUp, RefreshCw, X, Search, Check, Loader2 } from 'lucide-react';
 import { dashboardApi } from '../services/api';
 
 interface ApiItem {
@@ -153,6 +153,8 @@ export function FilterSection() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerLogs, setCustomerLogs] = useState<CustomerLog[]>([]);
   const [loadingCustomerData, setLoadingCustomerData] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [isApplied, setIsApplied] = useState(false);
   
   // Removed authentication check for rendering
   const isAuthenticated = true; // Always allow the filter to show
@@ -233,6 +235,9 @@ export function FilterSection() {
   };
 
   const handleApplyFilters = () => {
+    setIsApplying(true);
+    setIsApplied(false);
+
     // Build filter object for API
     const apiFilters: any = {};
     
@@ -281,6 +286,17 @@ export function FilterSection() {
     window.dispatchEvent(new CustomEvent('filtersChanged', { 
       detail: apiFilters 
     }));
+
+    // Show applying for a brief moment, then show applied
+    setTimeout(() => {
+      setIsApplying(false);
+      setIsApplied(true);
+      
+      // Reset applied state after a delay
+      setTimeout(() => {
+        setIsApplied(false);
+      }, 2000);
+    }, 600);
   };
 
   const handleClearFilters = () => {
@@ -508,11 +524,19 @@ export function FilterSection() {
               <div>
                 <label className="block text-sm font-medium text-white mb-2 opacity-0">Apply</label>
                 <button 
-                  className="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium flex items-center justify-center gap-2"
+                  className={`w-full px-4 py-2 text-white rounded-lg transition-all duration-300 font-medium flex items-center justify-center gap-2 ${
+                    isApplied ? 'bg-emerald-600' : 'bg-green-500 hover:bg-green-600'
+                  } ${isApplying ? 'opacity-90' : ''}`}
                   onClick={handleApplyFilters}
+                  disabled={isApplying}
                 >
-                  <Search size={18} />
-                  Apply
+                  {isApplying ? (
+                    <><Loader2 size={18} className="animate-spin" />Applying...</>
+                  ) : isApplied ? (
+                    <><Check size={18} />Applied</>
+                  ) : (
+                    <><Search size={18} />Apply</>
+                  )}
                 </button>
               </div>
               <div>
