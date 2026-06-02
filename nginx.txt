@@ -1,3 +1,4 @@
+//Don't use this
 server {
     listen 80;
     server_name yourdomain.com; # Replace with your actual domain
