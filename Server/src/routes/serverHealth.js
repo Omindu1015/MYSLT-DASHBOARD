@@ -20,9 +20,11 @@ router.get('/snmp/:ip', verifyToken, getServerMetricsSNMP);
 
 // Admin-only routes
 router.post('/snmp/test', verifyToken, isAdmin, testSNMPConnectionEndpoint);
-router.post('/snmp/add', verifyToken, isAdmin, addServerWithSNMP);
 router.post('/initialize', verifyToken, isAdmin, initializeServerHealth);
-router.delete('/:ip', verifyToken, isAdmin, deleteServer);
+
+// Operations allowed for any logged-in user
+router.post('/snmp/add', verifyToken, addServerWithSNMP);
+router.delete('/:ip', verifyToken, deleteServer);
 
 // Public route for agents to report health
 router.post('/update', updateServerHealth);

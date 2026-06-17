@@ -91,9 +91,13 @@ export function AdminPanel() {
       alert('Adding server... This may take a few seconds while fetching SNMP data.');
       
       // Call SNMP API to add server with real data
+      const token = localStorage.getItem('authToken');
       const response = await fetch('/api/server-health/snmp/add', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           serverIp: newServerIP,
           community: 'public'
@@ -125,8 +129,12 @@ export function AdminPanel() {
 
     try {
       // Call backend API to delete server
+      const token = localStorage.getItem('authToken');
       const response = await fetch(`/api/server-health/${ip}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       if (response.ok) {
