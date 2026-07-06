@@ -46,20 +46,21 @@
 
 
  
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip } from 'recharts';
 import { dashboardApi } from '../services/api';
 
 export function LiveTrafficChart() {
   const [data, setData] = useState<Array<{ time: string; value: number }>>([]);
+  const activeFiltersRef = useRef<{ serverIdentifier?: string; customerEmail?: string }>({});
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     let currentRefresh = '30s';
 
-    const fetchData = async (_filters?: any) => {
+    const fetchData = async (serverIdentifier?: string, customerEmail?: string) => {
       try {
-        const response = await dashboardApi.getLiveTraffic(30);
+        const response = await dashboardApi.getLiveTraffic(30, serverIdentifier, customerEmail);
         if (response.success && response.data) {
           setData(response.data.map((item: any) => ({
             time: item.time,
@@ -68,31 +69,36 @@ export function LiveTrafficChart() {
         }
       } catch (error) {
         console.error('Error fetching live traffic data:', error);
-        // Clear data when backend connection fails
         setData([]);
       }
     };
 
     const setupInterval = (refresh: string) => {
       if (intervalId) clearInterval(intervalId);
-      
       if (refresh === 'off' || refresh === 'Off') {
         intervalId = null;
       } else {
         const ms = refresh === '30s' ? 30000 : refresh === '1m' ? 60000 : refresh === '5m' ? 300000 : 30000;
-        intervalId = setInterval(() => fetchData(), ms);
+        intervalId = setInterval(() => {
+          const { serverIdentifier, customerEmail } = activeFiltersRef.current;
+          fetchData(serverIdentifier, customerEmail);
+        }, ms);
       }
     };
 
     fetchData();
     setupInterval(currentRefresh);
-    
+
     const handleFilterChange = (event: any) => {
       const filters = event.detail || {};
+      activeFiltersRef.current = {
+        serverIdentifier: filters.serverIdentifier,
+        customerEmail: filters.customerEmail
+      };
       console.log('LiveTrafficChart applying filters:', filters);
-      fetchData(filters);
+      fetchData(filters.serverIdentifier, filters.customerEmail);
     };
-    
+
     const handleAutoRefreshChange = (event: any) => {
       const { autoRefresh } = event.detail || {};
       if (autoRefresh) {
@@ -100,7 +106,7 @@ export function LiveTrafficChart() {
         setupInterval(autoRefresh);
       }
     };
-    
+
     window.addEventListener('filtersChanged', handleFilterChange);
     window.addEventListener('autoRefreshChanged', handleAutoRefreshChange);
 
