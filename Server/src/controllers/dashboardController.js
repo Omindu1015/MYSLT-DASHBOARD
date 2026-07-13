@@ -14,8 +14,111 @@ export const getDashboardStats = async (req, res) => {
 
   try {
     const data = await withCache(cacheKey, async () => {
-      const { apiNumber, customerEmail, dateFrom, dateTo, serverIdentifier } = req.query;
+      const { apiNumber, customerEmail, dateFrom, dateTo, serverIdentifier, last15MinsOnly } = req.query;
       const now = new Date();
+
+      if (last15MinsOnly === 'true') {
+        const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+        const filter15 = {
+          date: { $gte: fifteenMinutesAgo, $lte: now }
+        };
+        if (apiNumber && apiNumber !== 'ALL') {
+          filter15.apiNumber = apiNumber;
+        }
+        if (customerEmail) {
+          const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          filter15.customerEmail = { $regex: `^${safePrefix}` };
+        }
+        if (serverIdentifier) {
+          filter15.serverIdentifier = serverIdentifier;
+        }
+
+        const twoMinutesAgo = new Date(now.getTime() - 120000);
+        const liveTrafficFilter = {
+          date: { $gte: twoMinutesAgo, $lte: new Date(now.getTime() + 60000) }
+        };
+        if (apiNumber && apiNumber !== 'ALL') {
+          liveTrafficFilter.apiNumber = apiNumber;
+        }
+        if (customerEmail) {
+          const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          liveTrafficFilter.customerEmail = { $regex: `^${safePrefix}` };
+        }
+        if (serverIdentifier) {
+          liveTrafficFilter.serverIdentifier = serverIdentifier;
+        }
+
+        const addedServers = await ServerHealth.find().select('serverIp').lean();
+
+        const [facetResult, liveTrafCount] = await Promise.all([
+          ApiLog.aggregate([
+            { $match: filter15 },
+            {
+              $facet: {
+                uniqueCustomers: [
+                  { $group: { _id: '$customerEmail' } },
+                  { $count: 'count' }
+                ],
+                totalCount: [
+                  { $count: 'count' }
+                ],
+                accessMethods: [
+                  { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
+                ],
+                responseTypes: [
+                  {
+                    $group: {
+                      _id: {
+                        $cond: [
+                          { $eq: [{ $toLower: '$status' }, 'information'] },
+                          'Information',
+                          '$status'
+                        ]
+                      },
+                      count: { $sum: 1 }
+                    }
+                  }
+                ],
+                serverStats: [
+                  { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
+                ]
+              }
+            }
+          ]).then(res => res[0] || {}),
+          ApiLog.countDocuments(liveTrafficFilter)
+        ]);
+
+        const mergeStats = (history, recent) => {
+          const merged = {};
+          if (Array.isArray(history)) history.forEach(h => merged[h._id] = (merged[h._id] || 0) + h.count);
+          if (Array.isArray(recent)) recent.forEach(r => merged[r._id] = (merged[r._id] || 0) + r.count);
+          return merged;
+        };
+
+        const totalActiveCustomers = facetResult.uniqueCustomers?.[0]?.count || 0;
+        const totalTrafficCount = facetResult.totalCount?.[0]?.count || 0;
+        const liveTrafficCount = liveTrafCount;
+        const accessMethodDistribution = mergeStats([], facetResult.accessMethods || []);
+        const responseTypeDistribution = mergeStats([], facetResult.responseTypes || []);
+        const serverRequestStats = mergeStats([], facetResult.serverStats || []);
+
+        const serverRequests = {};
+        addedServers.forEach(server => {
+          const serverIp = server.serverIp;
+          const identifier = serverIp.split('.').pop();
+          serverRequests[serverIp] = serverRequestStats[identifier] || serverRequestStats[serverIp] || 0;
+        });
+
+        return {
+          liveTraffic: liveTrafficCount,
+          serverRequests,
+          customerChange: 'Live data stream active',
+          accessMethodDistribution,
+          responseTypeDistribution,
+          totalTrafficCount,
+          totalActiveCustomers
+        };
+      }
 
       // Build query filter
       const filter = {};

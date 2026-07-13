@@ -73,10 +73,11 @@ export function MetricCards() {
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     let currentRefresh = '30s';
+    const activeFiltersRef = { current: {} };
 
     const fetchStats = async (filters?: any) => {
       try {
-        const response = await dashboardApi.getStats(filters);
+        const response = await dashboardApi.getStats({ ...filters, last15MinsOnly: 'true' });
         if (response.success && response.data) {
           setStats(response.data);
         }
@@ -96,7 +97,7 @@ export function MetricCards() {
         intervalId = null;
       } else {
         const ms = refresh === '30s' ? 30000 : refresh === '1m' ? 60000 : refresh === '5m' ? 300000 : 30000;
-        intervalId = setInterval(() => fetchStats(), ms);
+        intervalId = setInterval(() => fetchStats(activeFiltersRef.current), ms);
       }
     };
 
@@ -106,6 +107,7 @@ export function MetricCards() {
     // Listen for filter changes
     const handleFilterChange = (event: any) => {
       const filters = event.detail || {};
+      activeFiltersRef.current = filters;
       console.log('MetricCards applying filters:', filters);
       fetchStats(filters);
     };
