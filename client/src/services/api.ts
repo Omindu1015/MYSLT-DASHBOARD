@@ -62,6 +62,7 @@ export const dashboardApi = {
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    last15MinsOnly?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
@@ -78,6 +79,7 @@ export const dashboardApi = {
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    last15MinsOnly?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters) {

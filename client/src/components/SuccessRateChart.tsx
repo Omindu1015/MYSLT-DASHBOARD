@@ -54,10 +54,11 @@ export function SuccessRateChart() {
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     let currentRefresh = '30s';
+    const activeFiltersRef = { current: {} };
 
     const fetchData = async (filters?: any) => {
       try {
-        const response = await dashboardApi.getSuccessRates(filters);
+        const response = await dashboardApi.getSuccessRates({ ...filters, last15MinsOnly: 'true' });
         if (response.success && response.data) {
           const formattedData = response.data.slice(0, 6).map((item: any) => ({
             api: item.apiNumber,
@@ -79,7 +80,7 @@ export function SuccessRateChart() {
         intervalId = null;
       } else {
         const ms = refresh === '30s' ? 30000 : refresh === '1m' ? 60000 : refresh === '5m' ? 300000 : 30000;
-        intervalId = setInterval(() => fetchData(), ms);
+        intervalId = setInterval(() => fetchData(activeFiltersRef.current), ms);
       }
     };
 
@@ -88,6 +89,7 @@ export function SuccessRateChart() {
     
     const handleFilterChange = (event: any) => {
       const filters = event.detail || {};
+      activeFiltersRef.current = filters;
       console.log('SuccessRateChart applying filters:', filters);
       fetchData(filters);
     };
@@ -101,7 +103,6 @@ export function SuccessRateChart() {
     };
     
     window.addEventListener('filtersChanged', handleFilterChange);
-    window.addEventListener('autoRefreshChanged', handleAutoRefreshChange);
     window.addEventListener('autoRefreshChanged', handleAutoRefreshChange);
 
     return () => {
@@ -119,7 +120,7 @@ export function SuccessRateChart() {
 
   return (
     <div className="bg-slate-800 rounded-xl p-4 sm:p-6">
-      <h3 className="text-lg font-bold text-white mb-4">API-wise Success Rate</h3>
+      <h3 className="text-lg font-bold text-white mb-4">API-wise Success Rate (Last 15 Mins)</h3>
 
       <div className="h-56 sm:h-64">
         <ResponsiveContainer width="100%" height="100%">

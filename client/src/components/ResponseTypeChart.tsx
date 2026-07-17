@@ -78,10 +78,11 @@ export function ResponseTypeChart() {
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     let currentRefresh = '30s';
+    const activeFiltersRef = { current: {} };
 
     const fetchData = async (filters?: any) => {
       try {
-        const response = await dashboardApi.getStats(filters);
+        const response = await dashboardApi.getStats({ ...filters, last15MinsOnly: 'true' });
         if (response.success && response.data.responseTypeDistribution) {
           const dist = response.data.responseTypeDistribution;
           setData([
@@ -108,7 +109,7 @@ export function ResponseTypeChart() {
         intervalId = null;
       } else {
         const ms = refresh === '30s' ? 30000 : refresh === '1m' ? 60000 : refresh === '5m' ? 300000 : 30000;
-        intervalId = setInterval(() => fetchData(), ms);
+        intervalId = setInterval(() => fetchData(activeFiltersRef.current), ms);
       }
     };
 
@@ -117,6 +118,7 @@ export function ResponseTypeChart() {
     
     const handleFilterChange = (event: any) => {
       const filters = event.detail || {};
+      activeFiltersRef.current = filters;
       console.log('ResponseTypeChart applying filters:', filters);
       fetchData(filters);
     };
@@ -142,7 +144,7 @@ export function ResponseTypeChart() {
   return (
     <div className="bg-slate-800 rounded-xl p-4 sm:p-6">
       <h3 className="text-lg font-bold text-white mb-4">
-        Response Type Distribution
+        Response Type Distribution (Last 15 Mins)
       </h3>
       <div className="h-56 sm:h-64">
         <ResponsiveContainer width="100%" height="100%">

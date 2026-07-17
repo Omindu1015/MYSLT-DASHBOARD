@@ -480,7 +480,43 @@ export const getApiResponseTimes = async (req, res) => {
 
   try {
     const data = await withCache(cacheKey, async () => {
-      const { apiNumber, customerEmail: rtCustomerEmail, dateFrom, dateTo, serverIdentifier } = req.query;
+      const { apiNumber, customerEmail: rtCustomerEmail, dateFrom, dateTo, serverIdentifier, last15MinsOnly } = req.query;
+
+      if (last15MinsOnly === 'true') {
+        const now = new Date();
+        const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+        const filter15 = {
+          date: { $gte: fifteenMinutesAgo, $lte: now }
+        };
+        if (apiNumber && apiNumber !== 'ALL') filter15.apiNumber = apiNumber;
+        if (serverIdentifier) filter15.serverIdentifier = serverIdentifier;
+        if (rtCustomerEmail) {
+          const safePrefix = rtCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          filter15.customerEmail = { $regex: `^${safePrefix}` };
+        }
+
+        const recent = await ApiLog.aggregate([
+          { $match: filter15 },
+          {
+            $group: {
+              _id: '$apiNumber',
+              totalRT: { $sum: '$responseTime' },
+              minRT: { $min: '$responseTime' },
+              maxRT: { $max: '$responseTime' },
+              count: { $sum: 1 }
+            }
+          }
+        ]);
+
+        return recent.map(r => ({
+          apiNumber: r._id,
+          apiName: apiMapping[r._id] || 'Unknown',
+          avgResponseTime: r.count > 0 ? Math.round(r.totalRT / r.count) : 0,
+          minResponseTime: r.minRT || 0,
+          maxResponseTime: r.maxRT || 0,
+          requestCount: r.count
+        })).sort((a, b) => b.avgResponseTime - a.avgResponseTime);
+      }
 
       const filter = {};
       if (apiNumber && apiNumber !== 'ALL') filter.apiNumber = apiNumber;
@@ -593,7 +629,46 @@ export const getApiSuccessRates = async (req, res) => {
 
   try {
     const data = await withCache(cacheKey, async () => {
-      const { customerEmail: srCustomerEmail, dateFrom, dateTo, serverIdentifier } = req.query;
+      const { customerEmail: srCustomerEmail, dateFrom, dateTo, serverIdentifier, last15MinsOnly } = req.query;
+
+      if (last15MinsOnly === 'true') {
+        const now = new Date();
+        const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+        const filter15 = {
+          date: { $gte: fifteenMinutesAgo, $lte: now }
+        };
+        if (serverIdentifier) filter15.serverIdentifier = serverIdentifier;
+        if (srCustomerEmail) {
+          const safePrefix = srCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          filter15.customerEmail = { $regex: `^${safePrefix}` };
+        }
+
+        const recent = await ApiLog.aggregate([
+          { $match: filter15 },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: 1 },
+              successful: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: '$status', regex: /^information$/i } },
+                    1,
+                    0
+                  ]
+                }
+              }
+            }
+          }
+        ]);
+
+        return recent.map(r => ({
+          apiNumber: r._id,
+          apiName: apiMapping[r._id] || 'Unknown',
+          successRate: r.total > 0 ? Math.round((r.successful / r.total) * 10000) / 100 : 0,
+          totalRequests: r.total
+        })).sort((a, b) => b.totalRequests - a.totalRequests);
+      }
 
       const filter = {};
       if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
