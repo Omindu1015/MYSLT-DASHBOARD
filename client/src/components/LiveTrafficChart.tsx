@@ -118,7 +118,7 @@ export function LiveTrafficChart() {
   }, []);
   return <div className="bg-slate-800 rounded-xl p-4 sm:p-6">
       <h3 className="text-lg font-bold text-white mb-4">
-        Live Traffic Monitor
+        Live Traffic Monitor (Last 30 Mins)
       </h3>
       <div className="h-56 sm:h-64">
         <ResponsiveContainer width="100%" height="100%">
