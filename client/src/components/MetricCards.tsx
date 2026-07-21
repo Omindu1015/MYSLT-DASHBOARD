@@ -73,10 +73,11 @@ export function MetricCards() {
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     let currentRefresh = '30s';
+    const activeFiltersRef = { current: {} };
 
     const fetchStats = async (filters?: any) => {
       try {
-        const response = await dashboardApi.getStats(filters);
+        const response = await dashboardApi.getStats({ ...filters, last15MinsOnly: 'true' });
         if (response.success && response.data) {
           setStats(response.data);
         }
@@ -96,7 +97,7 @@ export function MetricCards() {
         intervalId = null;
       } else {
         const ms = refresh === '30s' ? 30000 : refresh === '1m' ? 60000 : refresh === '5m' ? 300000 : 30000;
-        intervalId = setInterval(() => fetchStats(), ms);
+        intervalId = setInterval(() => fetchStats(activeFiltersRef.current), ms);
       }
     };
 
@@ -106,6 +107,7 @@ export function MetricCards() {
     // Listen for filter changes
     const handleFilterChange = (event: any) => {
       const filters = event.detail || {};
+      activeFiltersRef.current = filters;
       console.log('MetricCards applying filters:', filters);
       fetchStats(filters);
     };
@@ -193,7 +195,7 @@ export function MetricCards() {
     title: 'Total Active Customers',
     value: stats?.totalActiveCustomers.toString() || '0',
     numericValue: stats?.totalActiveCustomers || 0,
-    change: '',
+    change: 'Last 15 minutes',
     icon: UsersIcon,
     color: getActiveCustomersColor(stats?.totalActiveCustomers || 0),
     textColor: 'text-white',
@@ -203,7 +205,7 @@ export function MetricCards() {
     title: 'Live Traffic',
     value: stats?.liveTraffic?.toString() || '0',
     numericValue: stats?.liveTraffic || 0,
-    change: '',
+    change: 'Last 2 minutes',
     icon: ActivityIcon,
     color: 'bg-emerald-500',
     textColor: 'text-emerald-100',
@@ -214,7 +216,7 @@ export function MetricCards() {
     title: 'Total Request Count',
     value: stats?.totalTrafficCount.toLocaleString() || '0',
     numericValue: stats?.totalTrafficCount || 0,
-    change: '',
+    change: 'Last 15 minutes',
     icon: TrendingUpIcon,
     color: 'bg-green-500',
     textColor: 'text-green-100',
@@ -228,7 +230,7 @@ export function MetricCards() {
         title: 'Number of Requests',
         value: count.toLocaleString(),
         numericValue: count,
-        change: `Server ${ip.split('.').pop()}`,
+        change: `Server ${ip.split('.').pop()} (Last 15 mins)`,
         icon: ServerIcon,
         ...serverColors[index % serverColors.length],
         threshold: 30000000,

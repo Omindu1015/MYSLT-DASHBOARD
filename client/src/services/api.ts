@@ -44,6 +44,7 @@ export const dashboardApi = {
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    last15MinsOnly?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
@@ -57,9 +58,11 @@ export const dashboardApi = {
 
   getResponseTimes: async (filters?: {
     apiNumber?: string;
+    customerEmail?: string;
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    last15MinsOnly?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
@@ -72,9 +75,11 @@ export const dashboardApi = {
   },
 
   getSuccessRates: async (filters?: {
+    customerEmail?: string;
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    last15MinsOnly?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
@@ -86,8 +91,12 @@ export const dashboardApi = {
     return apiRequest(`/dashboard/success-rates${queryString ? `?${queryString}` : ''}`);
   },
 
-  getLiveTraffic: async (minutes: number = 30, serverIdentifier?: string) => {
-    return apiRequest(`/dashboard/live-traffic?minutes=${minutes}${serverIdentifier ? `&serverIdentifier=${serverIdentifier}` : ''}`);
+  getLiveTraffic: async (minutes: number = 30, serverIdentifier?: string, customerEmail?: string) => {
+    const params = new URLSearchParams();
+    params.append('minutes', String(minutes));
+    if (serverIdentifier) params.append('serverIdentifier', serverIdentifier);
+    if (customerEmail) params.append('customerEmail', customerEmail);
+    return apiRequest(`/dashboard/live-traffic?${params.toString()}`);
   },
 
   getApiDetails: async (filters?: {

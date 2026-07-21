@@ -14,8 +14,111 @@ export const getDashboardStats = async (req, res) => {
 
   try {
     const data = await withCache(cacheKey, async () => {
-      const { apiNumber, customerEmail, dateFrom, dateTo, serverIdentifier } = req.query;
+      const { apiNumber, customerEmail, dateFrom, dateTo, serverIdentifier, last15MinsOnly } = req.query;
       const now = new Date();
+
+      if (last15MinsOnly === 'true') {
+        const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+        const filter15 = {
+          date: { $gte: fifteenMinutesAgo, $lte: now }
+        };
+        if (apiNumber && apiNumber !== 'ALL') {
+          filter15.apiNumber = apiNumber;
+        }
+        if (customerEmail) {
+          const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          filter15.customerEmail = { $regex: `^${safePrefix}` };
+        }
+        if (serverIdentifier) {
+          filter15.serverIdentifier = serverIdentifier;
+        }
+
+        const twoMinutesAgo = new Date(now.getTime() - 120000);
+        const liveTrafficFilter = {
+          date: { $gte: twoMinutesAgo, $lte: new Date(now.getTime() + 60000) }
+        };
+        if (apiNumber && apiNumber !== 'ALL') {
+          liveTrafficFilter.apiNumber = apiNumber;
+        }
+        if (customerEmail) {
+          const safePrefix = customerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          liveTrafficFilter.customerEmail = { $regex: `^${safePrefix}` };
+        }
+        if (serverIdentifier) {
+          liveTrafficFilter.serverIdentifier = serverIdentifier;
+        }
+
+        const addedServers = await ServerHealth.find().select('serverIp').lean();
+
+        const [facetResult, liveTrafCount] = await Promise.all([
+          ApiLog.aggregate([
+            { $match: filter15 },
+            {
+              $facet: {
+                uniqueCustomers: [
+                  { $group: { _id: '$customerEmail' } },
+                  { $count: 'count' }
+                ],
+                totalCount: [
+                  { $count: 'count' }
+                ],
+                accessMethods: [
+                  { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
+                ],
+                responseTypes: [
+                  {
+                    $group: {
+                      _id: {
+                        $cond: [
+                          { $eq: [{ $toLower: '$status' }, 'information'] },
+                          'Information',
+                          '$status'
+                        ]
+                      },
+                      count: { $sum: 1 }
+                    }
+                  }
+                ],
+                serverStats: [
+                  { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
+                ]
+              }
+            }
+          ]).then(res => res[0] || {}),
+          ApiLog.countDocuments(liveTrafficFilter)
+        ]);
+
+        const mergeStats = (history, recent) => {
+          const merged = {};
+          if (Array.isArray(history)) history.forEach(h => merged[h._id] = (merged[h._id] || 0) + h.count);
+          if (Array.isArray(recent)) recent.forEach(r => merged[r._id] = (merged[r._id] || 0) + r.count);
+          return merged;
+        };
+
+        const totalActiveCustomers = facetResult.uniqueCustomers?.[0]?.count || 0;
+        const totalTrafficCount = facetResult.totalCount?.[0]?.count || 0;
+        const liveTrafficCount = liveTrafCount;
+        const accessMethodDistribution = mergeStats([], facetResult.accessMethods || []);
+        const responseTypeDistribution = mergeStats([], facetResult.responseTypes || []);
+        const serverRequestStats = mergeStats([], facetResult.serverStats || []);
+
+        const serverRequests = {};
+        addedServers.forEach(server => {
+          const serverIp = server.serverIp;
+          const identifier = serverIp.split('.').pop();
+          serverRequests[serverIp] = serverRequestStats[identifier] || serverRequestStats[serverIp] || 0;
+        });
+
+        return {
+          liveTraffic: liveTrafficCount,
+          serverRequests,
+          customerChange: 'Live data stream active',
+          accessMethodDistribution,
+          responseTypeDistribution,
+          totalTrafficCount,
+          totalActiveCustomers
+        };
+      }
 
       // Build query filter
       const filter = {};
@@ -166,98 +269,7 @@ export const getDashboardStats = async (req, res) => {
 
       const hot = getFilteredHotStats();
 
-      const [
-        totalActiveCustomers,
-        totalTrafficCountHistory,
-        totalTrafficCountRecent,
-        accessMethodStatsHistory,
-        accessMethodStatsRecent,
-        responseTypeStatsHistory,
-        responseTypeStatsRecent,
-        liveTrafficCount,
-        serverRequestStatsHistory,
-        serverRequestStatsRecent
-      ] = await Promise.all([
-        // Active unique customers: Using aggregation to prevent 16MB distinct limit error with 400k+ customers
-        ApiLog.aggregate([
-          { $match: filter },
-          { $group: { _id: '$customerEmail' } },
-          { $count: 'count' }
-        ]).then(res => res[0]?.count || 0),
-
-        // Total traffic
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          { $group: { _id: null, total: { $sum: '$totalRequests' } } }
-        ]).then(res => (res[0]?.total || 0)),
-        hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(recentFilter),
-
-        // Access method (History)
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          { $group: { _id: '$accessMethod', count: { $sum: '$totalRequests' } } }
-        ]),
-        hot ? Promise.resolve(hot.methods) : ApiLog.aggregate([
-          { $match: recentFilter },
-          { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
-        ]),
-
-        // Response type distribution (History)
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          {
-            $group: {
-              _id: null,
-              Information: { $sum: '$successCount' },
-              Warning: { $sum: '$warningCount' },
-              Error: { $sum: '$errorCount' },
-              Critical: { $sum: '$criticalCount' }
-            }
-          }
-        ]).then(res => {
-          if (!res[0]) return [];
-          return [
-            { _id: 'Information', count: res[0].Information || 0 },
-            { _id: 'Warning', count: res[0].Warning || 0 },
-            { _id: 'Error', count: res[0].Error || 0 },
-            { _id: 'Critical', count: res[0].Critical || 0 }
-          ];
-        }),
-        hot ? Promise.resolve(hot.statusDistribution) : ApiLog.aggregate([
-          { $match: recentFilter },
-          {
-            $group: {
-              _id: {
-                $cond: [
-                  { $eq: [{ $toLower: "$status" }, "information"] },
-                  "Information",
-                  "$status"
-                ]
-              },
-              count: { $sum: 1 }
-            }
-          }
-        ]),
-
-        // Live traffic (HotStats already has this)
-        hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(liveTrafficFilter),
-
-        // Server stats
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          { $group: { _id: '$serverIdentifier', count: { $sum: '$totalRequests' } } }
-        ]),
-        hot ? Promise.resolve(hot.servers) : ApiLog.aggregate([
-          { $match: recentFilter },
-          { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
-        ])
-      ]);
-
-      // --- MERGE LOGIC ---
-      console.log(`[Dashboard] History Count: ${totalTrafficCountHistory}`);
-      console.log(`[Dashboard] Recent Count: ${totalTrafficCountRecent}`);
-      const totalTrafficCount = totalTrafficCountHistory + totalTrafficCountRecent;
-
+      // Helper to merge [{_id, count}] arrays into a flat object
       const mergeStats = (history, recent) => {
         const merged = {};
         if (Array.isArray(history)) history.forEach(h => merged[h._id] = (merged[h._id] || 0) + h.count);
@@ -265,11 +277,161 @@ export const getDashboardStats = async (req, res) => {
         return merged;
       };
 
-      const accessMethodDistribution = mergeStats(accessMethodStatsHistory, accessMethodStatsRecent);
-      const responseTypeDistribution = mergeStats(responseTypeStatsHistory, responseTypeStatsRecent);
-      const serverRequestStats = mergeStats(serverRequestStatsHistory, serverRequestStatsRecent);
+      let totalActiveCustomers, totalTrafficCount, liveTrafficCount;
+      let accessMethodDistribution, responseTypeDistribution, serverRequestStats;
 
-      // Map server IPs to their request counts
+      if (isFilteredByCustomer) {
+        // --- CUSTOMER-FILTERED PATH ---
+        // HourlyStats has no customerEmail field, so we bypass it entirely.
+        // A single $facet aggregation on ApiLog gives all metrics in one indexed scan.
+        console.log('[Dashboard] Customer filter active — using ApiLog $facet path');
+
+        const [facetResult, liveTrafCount] = await Promise.all([
+          ApiLog.aggregate([
+            { $match: filter },
+            {
+              $facet: {
+                uniqueCustomers: [
+                  { $group: { _id: '$customerEmail' } },
+                  { $count: 'count' }
+                ],
+                totalCount: [
+                  { $count: 'count' }
+                ],
+                accessMethods: [
+                  { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
+                ],
+                responseTypes: [
+                  {
+                    $group: {
+                      _id: {
+                        $cond: [
+                          { $eq: [{ $toLower: '$status' }, 'information'] },
+                          'Information',
+                          '$status'
+                        ]
+                      },
+                      count: { $sum: 1 }
+                    }
+                  }
+                ],
+                serverStats: [
+                  { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
+                ]
+              }
+            }
+          ]).then(res => res[0] || {}),
+          ApiLog.countDocuments(liveTrafficFilter)
+        ]);
+
+        totalActiveCustomers = facetResult.uniqueCustomers?.[0]?.count || 0;
+        totalTrafficCount = facetResult.totalCount?.[0]?.count || 0;
+        liveTrafficCount = liveTrafCount;
+        accessMethodDistribution = mergeStats([], facetResult.accessMethods || []);
+        responseTypeDistribution = mergeStats([], facetResult.responseTypes || []);
+        serverRequestStats = mergeStats([], facetResult.serverStats || []);
+
+      } else {
+        // --- DEFAULT PATH: HourlyStats (history) + HotStats/ApiLog (current hour) ---
+        const [
+          activeCustomers,
+          trafficCountHistory,
+          trafficCountRecent,
+          methodStatsHistory,
+          methodStatsRecent,
+          responseTypeHistory,
+          responseTypeRecent,
+          liveCount,
+          serverReqHistory,
+          serverReqRecent
+        ] = await Promise.all([
+          // Active unique customers
+          ApiLog.aggregate([
+            { $match: filter },
+            { $group: { _id: '$customerEmail' } },
+            { $count: 'count' }
+          ]).then(res => res[0]?.count || 0),
+
+          // Total traffic
+          HourlyStats.aggregate([
+            { $match: historyFilter },
+            { $group: { _id: null, total: { $sum: '$totalRequests' } } }
+          ]).then(res => (res[0]?.total || 0)),
+          hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(recentFilter),
+
+          // Access method (History)
+          HourlyStats.aggregate([
+            { $match: historyFilter },
+            { $group: { _id: '$accessMethod', count: { $sum: '$totalRequests' } } }
+          ]),
+          hot ? Promise.resolve(hot.methods) : ApiLog.aggregate([
+            { $match: recentFilter },
+            { $group: { _id: '$accessMethod', count: { $sum: 1 } } }
+          ]),
+
+          // Response type distribution (History)
+          HourlyStats.aggregate([
+            { $match: historyFilter },
+            {
+              $group: {
+                _id: null,
+                Information: { $sum: '$successCount' },
+                Warning: { $sum: '$warningCount' },
+                Error: { $sum: '$errorCount' },
+                Critical: { $sum: '$criticalCount' }
+              }
+            }
+          ]).then(res => {
+            if (!res[0]) return [];
+            return [
+              { _id: 'Information', count: res[0].Information || 0 },
+              { _id: 'Warning', count: res[0].Warning || 0 },
+              { _id: 'Error', count: res[0].Error || 0 },
+              { _id: 'Critical', count: res[0].Critical || 0 }
+            ];
+          }),
+          hot ? Promise.resolve(hot.statusDistribution) : ApiLog.aggregate([
+            { $match: recentFilter },
+            {
+              $group: {
+                _id: {
+                  $cond: [
+                    { $eq: [{ $toLower: "$status" }, "information"] },
+                    "Information",
+                    "$status"
+                  ]
+                },
+                count: { $sum: 1 }
+              }
+            }
+          ]),
+
+          // Live traffic
+          hot ? Promise.resolve(hot.total) : ApiLog.countDocuments(liveTrafficFilter),
+
+          // Server stats
+          HourlyStats.aggregate([
+            { $match: historyFilter },
+            { $group: { _id: '$serverIdentifier', count: { $sum: '$totalRequests' } } }
+          ]),
+          hot ? Promise.resolve(hot.servers) : ApiLog.aggregate([
+            { $match: recentFilter },
+            { $group: { _id: '$serverIdentifier', count: { $sum: 1 } } }
+          ])
+        ]);
+
+        console.log(`[Dashboard] History Count: ${trafficCountHistory}`);
+        console.log(`[Dashboard] Recent Count: ${trafficCountRecent}`);
+
+        totalActiveCustomers = activeCustomers;
+        totalTrafficCount = trafficCountHistory + trafficCountRecent;
+        liveTrafficCount = liveCount;
+        accessMethodDistribution = mergeStats(methodStatsHistory, methodStatsRecent);
+        responseTypeDistribution = mergeStats(responseTypeHistory, responseTypeRecent);
+        serverRequestStats = mergeStats(serverReqHistory, serverReqRecent);
+      }
+
+      // --- COMMON: Map server IPs to their request counts ---
       const serverRequests = {};
       addedServers.forEach(server => {
         const serverIp = server.serverIp;
@@ -277,9 +439,8 @@ export const getDashboardStats = async (req, res) => {
         serverRequests[serverIp] = serverRequestStats[identifier] || serverRequestStats[serverIp] || 0;
       });
 
-      // Restore customer change percentage
+      // Customer change percentage
       let customerChangeText = 'Live data stream active';
-
       if (yesterdayCustomerCount > 0) {
         const customerChangePercent = ((totalActiveCustomers - yesterdayCustomerCount) / yesterdayCustomerCount) * 100;
         const sign = customerChangePercent >= 0 ? '+' : '';
@@ -319,11 +480,51 @@ export const getApiResponseTimes = async (req, res) => {
 
   try {
     const data = await withCache(cacheKey, async () => {
-      const { apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
+      const { apiNumber, customerEmail: rtCustomerEmail, dateFrom, dateTo, serverIdentifier, last15MinsOnly } = req.query;
+
+      if (last15MinsOnly === 'true') {
+        const now = new Date();
+        const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+        const filter15 = {
+          date: { $gte: fifteenMinutesAgo, $lte: now }
+        };
+        if (apiNumber && apiNumber !== 'ALL') filter15.apiNumber = apiNumber;
+        if (serverIdentifier) filter15.serverIdentifier = serverIdentifier;
+        if (rtCustomerEmail) {
+          const safePrefix = rtCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          filter15.customerEmail = { $regex: `^${safePrefix}` };
+        }
+
+        const recent = await ApiLog.aggregate([
+          { $match: filter15 },
+          {
+            $group: {
+              _id: '$apiNumber',
+              totalRT: { $sum: '$responseTime' },
+              minRT: { $min: '$responseTime' },
+              maxRT: { $max: '$responseTime' },
+              count: { $sum: 1 }
+            }
+          }
+        ]);
+
+        return recent.map(r => ({
+          apiNumber: r._id,
+          apiName: apiMapping[r._id] || 'Unknown',
+          avgResponseTime: r.count > 0 ? Math.round(r.totalRT / r.count) : 0,
+          minResponseTime: r.minRT || 0,
+          maxResponseTime: r.maxRT || 0,
+          requestCount: r.count
+        })).sort((a, b) => b.avgResponseTime - a.avgResponseTime);
+      }
 
       const filter = {};
       if (apiNumber && apiNumber !== 'ALL') filter.apiNumber = apiNumber;
       if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (rtCustomerEmail) {
+        const safePrefix = rtCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        filter.customerEmail = { $regex: `^${safePrefix}` };
+      }
       if (dateFrom || dateTo) {
         filter.date = {};
         if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -341,21 +542,12 @@ export const getApiResponseTimes = async (req, res) => {
 
       const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
 
-      const [history, recent] = await Promise.all([
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          {
-            $group: {
-              _id: '$apiNumber',
-              totalRT: { $sum: '$totalResponseTime' },
-              count: { $sum: '$totalRequests' },
-              minRT: { $min: '$minResponseTime' },
-              maxRT: { $max: '$maxResponseTime' }
-            }
-          }
-        ]),
-        ApiLog.aggregate([
-          { $match: recentFilter },
+      let history, recent;
+      if (rtCustomerEmail) {
+        // Customer filter: skip HourlyStats, query ApiLog for full date range
+        history = [];
+        recent = await ApiLog.aggregate([
+          { $match: filter },
           {
             $group: {
               _id: '$apiNumber',
@@ -365,8 +557,35 @@ export const getApiResponseTimes = async (req, res) => {
               count: { $sum: 1 }
             }
           }
-        ])
-      ]);
+        ]);
+      } else {
+        [history, recent] = await Promise.all([
+          HourlyStats.aggregate([
+            { $match: historyFilter },
+            {
+              $group: {
+                _id: '$apiNumber',
+                totalRT: { $sum: '$totalResponseTime' },
+                count: { $sum: '$totalRequests' },
+                minRT: { $min: '$minResponseTime' },
+                maxRT: { $max: '$maxResponseTime' }
+              }
+            }
+          ]),
+          ApiLog.aggregate([
+            { $match: recentFilter },
+            {
+              $group: {
+                _id: '$apiNumber',
+                totalRT: { $sum: '$responseTime' },
+                minRT: { $min: '$responseTime' },
+                maxRT: { $max: '$responseTime' },
+                count: { $sum: 1 }
+              }
+            }
+          ])
+        ]);
+      }
 
       const apiMap = {};
       const merge = (results) => {
@@ -410,10 +629,53 @@ export const getApiSuccessRates = async (req, res) => {
 
   try {
     const data = await withCache(cacheKey, async () => {
-      const { dateFrom, dateTo, serverIdentifier } = req.query;
+      const { customerEmail: srCustomerEmail, dateFrom, dateTo, serverIdentifier, last15MinsOnly } = req.query;
+
+      if (last15MinsOnly === 'true') {
+        const now = new Date();
+        const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+        const filter15 = {
+          date: { $gte: fifteenMinutesAgo, $lte: now }
+        };
+        if (serverIdentifier) filter15.serverIdentifier = serverIdentifier;
+        if (srCustomerEmail) {
+          const safePrefix = srCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          filter15.customerEmail = { $regex: `^${safePrefix}` };
+        }
+
+        const recent = await ApiLog.aggregate([
+          { $match: filter15 },
+          {
+            $group: {
+              _id: '$apiNumber',
+              total: { $sum: 1 },
+              successful: {
+                $sum: {
+                  $cond: [
+                    { $regexMatch: { input: '$status', regex: /^information$/i } },
+                    1,
+                    0
+                  ]
+                }
+              }
+            }
+          }
+        ]);
+
+        return recent.map(r => ({
+          apiNumber: r._id,
+          apiName: apiMapping[r._id] || 'Unknown',
+          successRate: r.total > 0 ? Math.round((r.successful / r.total) * 10000) / 100 : 0,
+          totalRequests: r.total
+        })).sort((a, b) => b.totalRequests - a.totalRequests);
+      }
 
       const filter = {};
       if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
+      if (srCustomerEmail) {
+        const safePrefix = srCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        filter.customerEmail = { $regex: `^${safePrefix}` };
+      }
       if (dateFrom || dateTo) {
         filter.date = {};
         if (dateFrom) filter.date.$gte = new Date(dateFrom);
@@ -429,19 +691,12 @@ export const getApiSuccessRates = async (req, res) => {
 
       const recentFilter = { ...filter, date: { $gte: oneHourAgo, $lte: now } };
 
-      const [history, recent] = await Promise.all([
-        HourlyStats.aggregate([
-          { $match: historyFilter },
-          {
-            $group: {
-              _id: '$apiNumber',
-              total: { $sum: '$totalRequests' },
-              successful: { $sum: '$successCount' }
-            }
-          }
-        ]),
-        ApiLog.aggregate([
-          { $match: recentFilter },
+      let history, recent;
+      if (srCustomerEmail) {
+        // Customer filter: skip HourlyStats, query ApiLog for full date range
+        history = [];
+        recent = await ApiLog.aggregate([
+          { $match: filter },
           {
             $group: {
               _id: '$apiNumber',
@@ -449,7 +704,7 @@ export const getApiSuccessRates = async (req, res) => {
               successful: {
                 $sum: {
                   $cond: [
-                    { $regexMatch: { input: "$status", regex: /^information$/i } },
+                    { $regexMatch: { input: '$status', regex: /^information$/i } },
                     1,
                     0
                   ]
@@ -457,8 +712,39 @@ export const getApiSuccessRates = async (req, res) => {
               }
             }
           }
-        ])
-      ]);
+        ]);
+      } else {
+        [history, recent] = await Promise.all([
+          HourlyStats.aggregate([
+            { $match: historyFilter },
+            {
+              $group: {
+                _id: '$apiNumber',
+                total: { $sum: '$totalRequests' },
+                successful: { $sum: '$successCount' }
+              }
+            }
+          ]),
+          ApiLog.aggregate([
+            { $match: recentFilter },
+            {
+              $group: {
+                _id: '$apiNumber',
+                total: { $sum: 1 },
+                successful: {
+                  $sum: {
+                    $cond: [
+                      { $regexMatch: { input: "$status", regex: /^information$/i } },
+                      1,
+                      0
+                    ]
+                  }
+                }
+              }
+            }
+          ])
+        ]);
+      }
 
       const apiMap = {};
       const merge = (results) => {
@@ -495,7 +781,7 @@ export const getApiSuccessRates = async (req, res) => {
  */
 export const getLiveTraffic = async (req, res) => {
   try {
-    const { minutes = 30, serverIdentifier } = req.query;
+    const { minutes = 30, serverIdentifier, customerEmail: ltCustomerEmail } = req.query;
     const now = new Date();
     // Increase window and add future buffer for clock drift
     const timeAgo = new Date(now.getTime() - (parseInt(minutes) + 10) * 60000);
@@ -507,6 +793,10 @@ export const getLiveTraffic = async (req, res) => {
 
     if (serverIdentifier) {
       filter.serverIdentifier = serverIdentifier;
+    }
+    if (ltCustomerEmail) {
+      const safePrefix = ltCustomerEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      filter.customerEmail = { $regex: `^${safePrefix}` };
     }
 
     // Group by 2-minute intervals for smoother visualization
