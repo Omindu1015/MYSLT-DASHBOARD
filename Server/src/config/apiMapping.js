@@ -1,5 +1,5 @@
 // API Number to Function Name mapping
-export const apiMapping = {
+export const apiMapping ={
   'A01': 'Register',
   'A02': 'Login',
   'A03': 'Terminate User',
@@ -83,6 +83,7 @@ export const apiMapping = {
   'A81': 'GetDataTransferAmounts',
   'A82': 'ValidateDataTransferSub',
   'A83': 'TransferData',
+  'A84': 'PurchaseAdvancedReportsPrepaidInit',
   'A85': 'ProtocolReport',
   'A86': 'PurchaseAdvancedReportsPrepaidInit',
   'A87': 'PurchaseAdvancedReportsPrepaidConfirm',
@@ -98,6 +99,7 @@ export const apiMapping = {
   'A97': 'ResendOTPV2',
   'A98': 'eBillCheckUserExist',
   'A99': 'GetCurrentBBPackageV2',
+  'A102': 'ForgotPasswordV1',
   'A104': 'GetBBPackagesInterim',
   'A105': 'GetPEOPackagesInterim',
   'A106': 'GetVoicePackagesInterim',
@@ -150,7 +152,24 @@ export const apiMapping = {
   'A153': 'GoogleRefreshToken',
   'A154': 'AddPopupMessageBanner',
   'A155': '',
-  'A156': 'CreateFaultV2'
+  'A156': 'CreateFaultV2',
+  'A180': 'UpdateUserInfo',
+  'A182': 'ExternalAuthonticationV2',
+  'A185': 'LoginExternal',
+  'A301': 'GetAlexaAccessToken',
+  'A734': 'GetAccountDetailRequestV3',
+  'A801': 'GetWalletDetail',
+  'A802': 'LTEPrepaidAddDeleteOffer',
+  'A803': 'AddAccountRequestLTE',
+  'A805': 'LTEPrepaidPackageList',
+  'A806': 'GetDataUsageDetail',
+  'A807': 'getLTEPackageName',
+  'A878': 'GetNatureOfFaultsIntMDM',
+  'A900': 'AuthonticationChatBot',
+  'A989': 'AddToBill',
+  'A1139': 'PushNotificationTimelyPay',
+  'A1157': 'checkofferavaliability',
+  'A2157': 'packageActivation'
 };
 
 // Get all API numbers and names as array
