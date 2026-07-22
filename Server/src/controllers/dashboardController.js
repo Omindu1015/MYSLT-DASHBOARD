@@ -872,15 +872,14 @@ export const getApiDetails = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const result = await withCache(cacheKey, async () => {
       const { apiNumber, dateFrom, dateTo, serverIdentifier } = req.query;
+      let { minutes, last15MinsOnly } = req.query;
+      if (last15MinsOnly === 'true' && !minutes && !dateFrom && !dateTo) {
+        minutes = 15;
+      }
 
       const filter = {};
       if (apiNumber && apiNumber !== 'ALL') filter.apiNumber = apiNumber;
       if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
-      if (dateFrom || dateTo) {
-        filter.date = {};
-        if (dateFrom) filter.date.$gte = new Date(dateFrom);
-        if (dateTo) filter.date.$lte = new Date(dateTo);
-      }
 
       const now = new Date();
       const currentHourStart = new Date(now);
@@ -889,9 +888,33 @@ export const getApiDetails = async (req, res) => {
       const historyFilter = { date: { $lt: currentHourStart } };
       if (apiNumber && apiNumber !== 'ALL') historyFilter.apiNumber = apiNumber;
       if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
-      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
+      const recentFilter = { ...filter };
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+
+        recentFilter.date = {};
+        const fromDate = dateFrom ? new Date(dateFrom) : null;
+        const toDate = dateTo ? new Date(dateTo) : null;
+        if (fromDate) historyFilter.date.$gte = fromDate;
+        if (toDate) historyFilter.date.$lte = toDate;
+        recentFilter.date.$gte = fromDate && fromDate > currentHourStart ? fromDate : currentHourStart;
+        recentFilter.date.$lte = toDate && toDate < now ? toDate : now;
+      } else if (minutes) {
+        const minsNum = parseFloat(minutes);
+        if (!isNaN(minsNum) && minsNum > 0) {
+          const fromDate = new Date(now.getTime() - minsNum * 60 * 1000);
+          filter.date = { $gte: fromDate, $lte: now };
+          recentFilter.date = { $gte: fromDate, $lte: now };
+          historyFilter.date = { $lt: new Date(0) };
+        } else {
+          recentFilter.date = { $gte: currentHourStart, $lte: now };
+        }
+      } else {
+        recentFilter.date = { $gte: currentHourStart, $lte: now };
+      }
 
       const [statsHistory, statsRecent, totalApis] = await Promise.all([
         HourlyStats.aggregate([
@@ -928,9 +951,9 @@ export const getApiDetails = async (req, res) => {
         // HotStats Optimization: If no specific filters, we can skip API log scan
         Promise.all([
           HourlyStats.distinct('apiNumber', historyFilter),
-          hotStats.getSummary().totalRequests > 0
+          hotStats.getSummary().totalRequests > 0 && !dateFrom && !dateTo && !minutes
             ? Promise.resolve(Object.keys(hotStats.getSummary().apiStats))
-            : ApiLog.distinct('apiNumber', { ...recentFilter, date: { $gte: currentHourStart } })
+            : ApiLog.distinct('apiNumber', recentFilter)
         ]).then(([hist, rec]) => new Set([...hist, ...rec]).size)
       ]);
 
@@ -1060,15 +1083,14 @@ export const getTopSuccessApis = async (req, res) => {
   try {
     const data = await withCache(cacheKey, async () => {
       const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
+      let { minutes, last15MinsOnly } = req.query;
+      if (last15MinsOnly === 'true' && !minutes && !dateFrom && !dateTo) {
+        minutes = 15;
+      }
       const limitValue = limit ? parseInt(limit, 10) : 20;
 
       const filter = {};
       if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
-      if (dateFrom || dateTo) {
-        filter.date = {};
-        if (dateFrom) filter.date.$gte = new Date(dateFrom);
-        if (dateTo) filter.date.$lte = new Date(dateTo);
-      }
 
       const now = new Date();
       const currentHourStart = new Date(now);
@@ -1076,9 +1098,33 @@ export const getTopSuccessApis = async (req, res) => {
 
       const historyFilter = { date: { $lt: currentHourStart } };
       if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
-      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
+      const recentFilter = { ...filter };
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+
+        recentFilter.date = {};
+        const fromDate = dateFrom ? new Date(dateFrom) : null;
+        const toDate = dateTo ? new Date(dateTo) : null;
+        if (fromDate) historyFilter.date.$gte = fromDate;
+        if (toDate) historyFilter.date.$lte = toDate;
+        recentFilter.date.$gte = fromDate && fromDate > currentHourStart ? fromDate : currentHourStart;
+        recentFilter.date.$lte = toDate && toDate < now ? toDate : now;
+      } else if (minutes) {
+        const minsNum = parseFloat(minutes);
+        if (!isNaN(minsNum) && minsNum > 0) {
+          const fromDate = new Date(now.getTime() - minsNum * 60 * 1000);
+          filter.date = { $gte: fromDate, $lte: now };
+          recentFilter.date = { $gte: fromDate, $lte: now };
+          historyFilter.date = { $lt: new Date(0) };
+        } else {
+          recentFilter.date = { $gte: currentHourStart, $lte: now };
+        }
+      } else {
+        recentFilter.date = { $gte: currentHourStart, $lte: now };
+      }
 
       const [history, recent] = await Promise.all([
         HourlyStats.aggregate([
@@ -1156,15 +1202,14 @@ export const getTopErrorApis = async (req, res) => {
   try {
     const data = await withCache(cacheKey, async () => {
       const { dateFrom, dateTo, serverIdentifier, limit } = req.query;
+      let { minutes, last15MinsOnly } = req.query;
+      if (last15MinsOnly === 'true' && !minutes && !dateFrom && !dateTo) {
+        minutes = 15;
+      }
       const limitValue = limit ? parseInt(limit, 10) : 20;
 
       const filter = {};
       if (serverIdentifier) filter.serverIdentifier = serverIdentifier;
-      if (dateFrom || dateTo) {
-        filter.date = {};
-        if (dateFrom) filter.date.$gte = new Date(dateFrom);
-        if (dateTo) filter.date.$lte = new Date(dateTo);
-      }
 
       const now = new Date();
       const currentHourStart = new Date(now);
@@ -1172,9 +1217,33 @@ export const getTopErrorApis = async (req, res) => {
 
       const historyFilter = { date: { $lt: currentHourStart } };
       if (serverIdentifier) historyFilter.serverIdentifier = serverIdentifier;
-      if (dateFrom) historyFilter.date.$gte = new Date(dateFrom);
 
-      const recentFilter = { ...filter, date: { $gte: currentHourStart, $lte: now } };
+      const recentFilter = { ...filter };
+      if (dateFrom || dateTo) {
+        filter.date = {};
+        if (dateFrom) filter.date.$gte = new Date(dateFrom);
+        if (dateTo) filter.date.$lte = new Date(dateTo);
+
+        recentFilter.date = {};
+        const fromDate = dateFrom ? new Date(dateFrom) : null;
+        const toDate = dateTo ? new Date(dateTo) : null;
+        if (fromDate) historyFilter.date.$gte = fromDate;
+        if (toDate) historyFilter.date.$lte = toDate;
+        recentFilter.date.$gte = fromDate && fromDate > currentHourStart ? fromDate : currentHourStart;
+        recentFilter.date.$lte = toDate && toDate < now ? toDate : now;
+      } else if (minutes) {
+        const minsNum = parseFloat(minutes);
+        if (!isNaN(minsNum) && minsNum > 0) {
+          const fromDate = new Date(now.getTime() - minsNum * 60 * 1000);
+          filter.date = { $gte: fromDate, $lte: now };
+          recentFilter.date = { $gte: fromDate, $lte: now };
+          historyFilter.date = { $lt: new Date(0) };
+        } else {
+          recentFilter.date = { $gte: currentHourStart, $lte: now };
+        }
+      } else {
+        recentFilter.date = { $gte: currentHourStart, $lte: now };
+      }
 
       const [history, recent] = await Promise.all([
         HourlyStats.aggregate([

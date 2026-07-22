@@ -106,11 +106,13 @@ export const dashboardApi = {
     dateFrom?: string;
     dateTo?: string;
     serverIdentifier?: string;
+    minutes?: number | string;
+    last15MinsOnly?: string | boolean;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
       Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, String(value));
+        if (value !== undefined && value !== null && value !== '') params.append(key, String(value));
       });
     }
     const queryString = params.toString();
@@ -130,11 +132,13 @@ export const dashboardApi = {
     dateTo?: string;
     serverIdentifier?: string;
     limit?: number;
+    minutes?: number | string;
+    last15MinsOnly?: string | boolean;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
       Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, String(value));
+        if (value !== undefined && value !== null && value !== '') params.append(key, String(value));
       });
     }
     const queryString = params.toString();
@@ -146,11 +150,13 @@ export const dashboardApi = {
     dateTo?: string;
     serverIdentifier?: string;
     limit?: number;
+    minutes?: number | string;
+    last15MinsOnly?: string | boolean;
   }) => {
     const params = new URLSearchParams();
     if (filters) {
       Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, String(value));
+        if (value !== undefined && value !== null && value !== '') params.append(key, String(value));
       });
     }
     const queryString = params.toString();
